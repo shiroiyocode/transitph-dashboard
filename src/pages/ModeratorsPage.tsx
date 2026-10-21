@@ -74,9 +74,9 @@ export function ModeratorsPage() {
       {isLoading ? (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Moderator</th><th>Email</th><th>Status</th><th>Routes Approved</th><th>Posts Moderated</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Moderator</th><th>Email</th><th>Status</th><th>Routes Approved</th><th>Actions</th></tr></thead>
             <tbody>{Array.from({length:4}).map((_,i) => (
-              <tr key={i}>{Array.from({length:6}).map((_,j) => <td key={j}><div className="skeleton" /></td>)}</tr>
+              <tr key={i}>{Array.from({length:5}).map((_,j) => <td key={j}><div className="skeleton" /></td>)}</tr>
             ))}</tbody>
           </table>
         </div>
@@ -101,7 +101,6 @@ export function ModeratorsPage() {
                 <th>Email</th>
                 <th>Status</th>
                 <th>Routes Approved</th>
-                <th>Posts Moderated</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -119,11 +118,6 @@ export function ModeratorsPage() {
                   <td>
                     <span style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'3px 10px', borderRadius:99, fontSize:'0.72rem', fontWeight:700, background:'rgba(62,201,122,0.12)', color:'#3EC97A', border:'1px solid rgba(62,201,122,0.22)', whiteSpace:'nowrap' }}>
                       {m.routesApproved ?? 0} approved
-                    </span>
-                  </td>
-                  <td>
-                    <span style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'3px 10px', borderRadius:99, fontSize:'0.72rem', fontWeight:700, background:'rgba(46,124,246,0.10)', color:'#2E7CF6', border:'1px solid rgba(46,124,246,0.2)', whiteSpace:'nowrap' }}>
-                      {m.postsModerated ?? 0} moderated
                     </span>
                   </td>
                   <td>

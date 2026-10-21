@@ -3,6 +3,7 @@
   addDoc,
   arrayUnion,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -491,11 +492,14 @@ function mapPostDoc(d: QueryDocumentSnapshot<DocumentData>): PostItem {
 }
 
 function buildDashboardStatsFromData(
-  users: AppUser[],
+  allUsers: AppUser[],
   routes: RouteItem[],
   posts: PostItem[],
   feedbackDocs: QueryDocumentSnapshot<DocumentData>[],
 ): DashboardStats {
+  // Same set User Management lists: app users, not the superadmin account.
+  const users = allUsers.filter((u) => u.role !== 'superadmin')
+
   const userGrowthMap = new Map<number, number>()
   users.forEach((u) => {
     const key = toDayBucketKey(u.createdAt)
@@ -995,30 +999,39 @@ export async function getModeratorStats() {
   const users = await getUsers()
   const moderators = users.filter((u) => u.role === 'moderator')
 
-  const [routeApprovedSnap, postModeratedSnap] = await Promise.all([
-    getDocs(query(routesCol, where('status', '==', 'approved'))),
-    getDocs(query(postsCol, where('moderationStatus', 'in', ['approved', 'rejected', 'flagged']))),
+  const [routeApprovedSnap, auditLogDocs] = await Promise.all([
+    getDocs(query(routesCol, where('approvalStatus', '==', 'approved'))),
+    // Without the auditLogs collection-group rule deployed this read is
+    // denied; fall back to dashboard approvals only rather than fail the page.
+    getDocs(collectionGroup(db, 'auditLogs')).then((s) => s.docs).catch((error) => {
+      console.error('Could not read route audit logs', error)
+      return [] as QueryDocumentSnapshot<DocumentData>[]
+    }),
   ])
 
-  const approvedRoutesByModerator = new Map<string, number>()
-  routeApprovedSnap.forEach((d) => {
-    const reviewer = d.data().reviewedBy
-    if (reviewer) {
-      approvedRoutesByModerator.set(reviewer, (approvedRoutesByModerator.get(reviewer) ?? 0) + 1)
-    }
-  })
-
-  const moderatedPostsByModerator = new Map<string, number>()
-  postModeratedSnap.forEach((d) => {
-    const moderator = d.data().moderatedBy
-    if (moderator) {
-      moderatedPostsByModerator.set(moderator, (moderatedPostsByModerator.get(moderator) ?? 0) + 1)
+  // Approvals per moderator, as sets of routes so one approval logged twice
+  // counts once. The dashboard stamps reviewedBy on the route; the app leaves
+  // it out and logs moderator_approved / correction_merged instead (a merged
+  // correction's own doc is deleted, so the log is all that's left of it).
+  const approvedRoutesByModerator = new Map<string, Set<string>>()
+  const addApproval = (moderator: unknown, routeKey: string) => {
+    if (typeof moderator !== 'string' || !moderator) return
+    const routesForModerator = approvedRoutesByModerator.get(moderator) ?? new Set<string>()
+    routesForModerator.add(routeKey)
+    approvedRoutesByModerator.set(moderator, routesForModerator)
+  }
+  routeApprovedSnap.forEach((d) => addApproval(d.data().reviewedBy, d.id))
+  auditLogDocs.forEach((d) => {
+    const log = d.data()
+    if (log.action === 'moderator_approved') {
+      addApproval(log.actorId, String(log.routeId ?? d.ref.parent.parent?.id ?? d.id))
+    } else if (log.action === 'correction_merged') {
+      addApproval(log.actorId, String(log.meta?.correctionId ?? d.id))
     }
   })
 
   return moderators.map((m) => ({
     ...m,
-    routesApproved: approvedRoutesByModerator.get(m.id) ?? 0,
-    postsModerated: moderatedPostsByModerator.get(m.id) ?? 0,
+    routesApproved: approvedRoutesByModerator.get(m.id)?.size ?? 0,
   }))
 }

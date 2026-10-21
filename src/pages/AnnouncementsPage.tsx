@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createAnnouncement, deleteAnnouncement, getAnnouncements, updateAnnouncement } from '@/lib/firestoreApi'
 import { useAuth } from '@/hooks/useAuth'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Switch } from '@/components/ui/switch'
 import { Megaphone, Plus, Trash2 } from 'lucide-react'
 
 function toIsoLocalValue(date: Date) {
@@ -80,7 +79,6 @@ export function AnnouncementsPage() {
   const [message, setMessage] = useState('')
   const [type, setType] = useState<'info' | 'warning' | 'critical'>('info')
   const [targetAudience, setTargetAudience] = useState<'all' | 'student' | 'employee' | 'foreigner' | 'new_to_area'>('all')
-  const [isActive, setIsActive] = useState(true)
   const [scheduleMode, setScheduleMode] = useState<'now' | 'scheduled'>('now')
   const [scheduledAt, setScheduledAt] = useState(toIsoLocalValue(new Date()))
   const [expiresAt, setExpiresAt] = useState(toIsoLocalValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)))
@@ -89,7 +87,7 @@ export function AnnouncementsPage() {
 
   const create = useMutation({
     mutationFn: () => createAnnouncement({
-      title, message, type, targetAudience, isActive,
+      title, message, type, targetAudience, isActive: true,
       scheduledAt: scheduleMode === 'now' ? Timestamp.now() : Timestamp.fromDate(new Date(scheduledAt)),
       expiresAt: Timestamp.fromDate(new Date(expiresAt)),
       createdBy: user?.uid ?? '',
@@ -238,13 +236,8 @@ export function AnnouncementsPage() {
                 </select>
               </div>
               <div className="form-group">
-                <label>Active</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38 }}>
-                  <Switch checked={isActive} onCheckedChange={setIsActive} />
-                  <span style={{ fontSize: '0.84rem', color: isActive ? '#3EC97A' : 'var(--text-secondary)', fontWeight: 600 }}>
-                    {isActive ? 'Enabled' : 'Disabled'}
-                  </span>
-                </div>
+                <label>Expires At</label>
+                <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
               </div>
             </div>
 
@@ -254,11 +247,6 @@ export function AnnouncementsPage() {
                 <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
               </div>
             )}
-
-            <div className="form-group">
-              <label>Expires At</label>
-              <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
-            </div>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
               <Btn variant="outline" onClick={() => setShowForm(false)}>Cancel</Btn>
