@@ -492,13 +492,12 @@ function mapPostDoc(d: QueryDocumentSnapshot<DocumentData>): PostItem {
 }
 
 function buildDashboardStatsFromData(
-  allUsers: AppUser[],
+  users: AppUser[],
   routes: RouteItem[],
   posts: PostItem[],
   feedbackDocs: QueryDocumentSnapshot<DocumentData>[],
 ): DashboardStats {
-  // Same set User Management lists: app users, not the superadmin account.
-  const users = allUsers.filter((u) => u.role !== 'superadmin')
+  // Admins created from User Management still count as users.
 
   const userGrowthMap = new Map<number, number>()
   users.forEach((u) => {

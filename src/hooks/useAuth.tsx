@@ -34,9 +34,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      const userRole = await getCurrentUserRole(nextUser.uid)
-      setRole(userRole)
-      setIsLoading(false)
+      try {
+        setRole(await getCurrentUserRole(nextUser.uid))
+      } catch (error) {
+        // Role lookup failed (offline, rules, bad config): don't hang on "Checking access...".
+        console.error('Failed to load user role', error)
+        setRole(null)
+      } finally {
+        setIsLoading(false)
+      }
     })
 
     return () => unsub()
