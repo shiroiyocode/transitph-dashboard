@@ -1,6 +1,14 @@
-﻿import { useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
+import { Captcha } from '@/components/Captcha'
+import {
+  MAX_FAILED_ATTEMPTS,
+  clearFailedAttempts,
+  formatLockout,
+  getLockoutRemainingMs,
+  recordFailedAttempt,
+} from '@/lib/loginGuard'
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react'
 
 export function LoginPage() {
@@ -11,17 +19,50 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const [captchaReset, setCaptchaReset] = useState(0)
+  const [lockoutMs, setLockoutMs] = useState(getLockoutRemainingMs)
+
+  // Tick while locked so the message counts down and the form unlocks itself.
+  useEffect(() => {
+    if (lockoutMs <= 0) return
+    const timer = setInterval(() => setLockoutMs(getLockoutRemainingMs()), 1000)
+    return () => clearInterval(timer)
+  }, [lockoutMs > 0])
+
+  const locked = lockoutMs > 0
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (getLockoutRemainingMs() > 0) {
+      setLockoutMs(getLockoutRemainingMs())
+      return
+    }
+    if (!captchaToken) {
+      setError('Please complete the "I\'m not a robot" check first.')
+      return
+    }
+
     setLoading(true)
     setError(null)
     try {
       await login(email, password)
+      clearFailedAttempts()
       navigate('/')
     } catch {
-      setError('Login failed. Ensure your account has the superadmin role.')
+      const attemptsLeft = recordFailedAttempt()
+      if (attemptsLeft === 0) {
+        setLockoutMs(getLockoutRemainingMs())
+        setError(null)
+      } else {
+        setError(
+          `Login failed. Ensure your account has the admin or superadmin role. ${attemptsLeft} of ${MAX_FAILED_ATTEMPTS} attempts left.`,
+        )
+      }
     } finally {
+      // Every attempt needs a fresh captcha.
+      setCaptchaToken(null)
+      setCaptchaReset((n) => n + 1)
       setLoading(false)
     }
   }
@@ -102,7 +143,15 @@ export function LoginPage() {
             </div>
           </div>
 
-          {error && (
+          <Captcha onToken={setCaptchaToken} resetKey={captchaReset} />
+
+          {locked && (
+            <div className="state-banner error" style={{ fontSize: '0.8rem' }}>
+              Too many failed attempts. Sign-in is locked for another {formatLockout(lockoutMs)}.
+            </div>
+          )}
+
+          {error && !locked && (
             <div className="state-banner error" style={{ fontSize: '0.8rem' }}>
               {error}
             </div>
@@ -111,7 +160,7 @@ export function LoginPage() {
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={loading}
+            disabled={loading || locked || !captchaToken}
             style={{ width: '100%', justifyContent: 'center', padding: '11px 20px', marginTop: 4, fontSize: '0.88rem' }}
           >
             {loading ? (

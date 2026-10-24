@@ -118,6 +118,80 @@ function EditedBadge({ editCount }: { editCount?: number }) {
   )
 }
 
+// Same speeds (km/h) the app uses for a rider route's own ETA: drawn length of
+// each step ÷ speed, no waiting time.
+function speedKmh(mode: string) {
+  const m = mode.toLowerCase()
+  if (m.includes('walk')) return 5
+  if (m.includes('tricycle') || m.includes('trike')) return 15
+  if (m.includes('bus')) return 25
+  if (m.includes('fx') || m.includes('van')) return 30
+  if (m.includes('train') || m.includes('lrt') || m.includes('mrt')) return 40
+  return 20 // Jeepney, Ferry, and anything unrecognised
+}
+
+/** Backup for routes saved without an ETA: path length per step ÷ the mode's speed. */
+function estimateEtaMinutes(route: RouteItem) {
+  const points = route.pathPoints ?? []
+  const steps = route.steps ?? []
+  if (points.length < 2 || !steps.length) return 0
+
+  const boundaries = route.stepBoundaries ?? []
+  let minutes = 0
+  if (boundaries.length === steps.length) {
+    let start = 0
+    steps.forEach((step, i) => {
+      const end = Math.min(boundaries[i], points.length - 1)
+      if (end > start) minutes += (pathLengthMeters(points.slice(start, end + 1)) / 1000 / speedKmh(step.mode)) * 60
+      start = Math.max(start, end)
+    })
+  } else {
+    // No usable step boundaries: whole path at the steps' average speed.
+    const avgSpeed = steps.reduce((sum, s) => sum + speedKmh(s.mode), 0) / steps.length
+    minutes = (pathLengthMeters(points) / 1000 / avgSpeed) * 60
+  }
+  return minutes > 0 ? Math.max(1, Math.round(minutes)) : 0
+}
+
+/** The app sometimes saves "0" for ETA; fall back to an estimate when it did. */
+function formatEta(route: RouteItem) {
+  if (route.eta && parseFloat(route.eta) > 0) return `${route.eta} mins`
+  const estimate = estimateEtaMinutes(route)
+  return estimate > 0 ? `${estimate} mins` : 'N/A'
+}
+
+function pathLengthMeters(points: RouteItem['pathPoints']) {
+  if (!points || points.length < 2) return 0
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  let total = 0
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i]
+    const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng)
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2
+    total += 2 * 6371000 * Math.asin(Math.sqrt(h))
+  }
+  return total
+}
+
+/** Saved distance strings are mixed ("3.2 mi", "5.1 km"); read one as meters. */
+function savedDistanceMeters(distance?: string) {
+  const match = distance?.match(/([\d.,]+)\s*(km|mi|m)?/i)
+  const value = match ? parseFloat(match[1].replace(/,/g, '')) : NaN
+  if (!(value > 0)) return 0
+  const unit = match?.[2]?.toLowerCase()
+  if (unit === 'mi') return value * 1609.344
+  if (unit === 'm') return value
+  return value * 1000
+}
+
+/** Always kilometers: the saved distance if it's real, else measured along the drawn path. */
+function formatDistance(route: RouteItem) {
+  const meters = savedDistanceMeters(route.distance)
+    || (route.distanceMeters && route.distanceMeters > 0 ? route.distanceMeters : 0)
+    || pathLengthMeters(route.pathPoints)
+  return meters > 0 ? `${(meters / 1000).toFixed(1)} km` : 'N/A'
+}
+
 export function RoutesPage() {
   const qc = useQueryClient()
   const { user } = useAuth()
@@ -407,15 +481,9 @@ export function RoutesPage() {
                     : 'No step data',
                 ],
                 ['Transport Modes', (preview.transportModes ?? []).join(', ') || 'N/A'],
-                ['ETA', preview.eta ? `${preview.eta} mins` : 'N/A'],
+                ['ETA', formatEta(preview)],
                 ['Fare Estimate', preview.price ?? 'N/A'],
-                [
-                  'Distance',
-                  preview.distance ??
-                    (preview.distanceMeters != null
-                      ? `${(preview.distanceMeters / 1000).toFixed(1)} km`
-                      : 'N/A'),
-                ],
+                ['Distance', formatDistance(preview)],
               ].map(([label, value]) => (
                 <div key={String(label)} className="dialog-field">
                   <span className="dialog-field-label">{label}</span>

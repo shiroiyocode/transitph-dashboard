@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deleteUser, getUsers, liftUserRestriction, restrictUser, setUserBanStatus, updateUserRole } from '@/lib/firestoreApi'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ArrowUpDown, Search, Users } from 'lucide-react'
+import { useAuth } from '@/hooks/useAuth'
 import type { AppUser, UserRole } from '@/types/models'
 
 const PAGE_SIZE = 12
@@ -63,6 +64,7 @@ function Btn({ variant = 'outline', sm, icon, children, disabled, onClick, style
 function RoleBadge({ role }: { role?: string }) {
   const s: React.CSSProperties =
     role === 'superadmin' ? { background: 'rgba(46,124,246,0.12)', color: '#2E7CF6', border: '1px solid rgba(46,124,246,0.2)' }
+    : role === 'admin' ? { background: 'rgba(62,201,122,0.12)', color: '#2FA866', border: '1px solid rgba(62,201,122,0.25)' }
     : role === 'moderator' ? { background: 'rgba(155,127,232,0.12)', color: '#9B7FE8', border: '1px solid rgba(155,127,232,0.2)' }
     : { background: 'rgba(122,146,178,0.10)', color: '#7A92B2', border: '1px solid rgba(122,146,178,0.18)' }
   return (
@@ -102,6 +104,7 @@ function getRestrictionDaysLabel(user: AppUser) {
 
 export function UsersPage() {
   const qc = useQueryClient()
+  const { isSuperAdmin } = useAuth()
   const { data = [], isLoading, isError, error } = useQuery({ queryKey: ['users'], queryFn: getUsers })
 
   const [search, setSearch] = useState('')
@@ -168,6 +171,50 @@ export function UsersPage() {
     onSuccess: async () => { setMutationError(null); await invalidate() },
     onError: (err) => setMutationError(toErrorText('Failed to delete account', err)),
   })
+
+  const renderRoleControl = (u: AppUser, minWidth: number) => {
+    if (u.role === 'admin') return <RoleBadge role="admin" />
+    const currentRole: UserRole = u.role === 'moderator' ? 'moderator' : 'user'
+    return (
+      <select
+        value={currentRole}
+        onChange={(e) => {
+          const nextRole = e.target.value as UserRole
+          if (nextRole !== currentRole) updateRole.mutate({ id: u.id, role: nextRole })
+        }}
+        disabled={updateRole.isPending || !isSuperAdmin}
+        style={{ width:'auto', minWidth, fontSize:'0.76rem', padding:'5px 8px' }}
+      >
+        {roleOptions.map((role) => (
+          <option key={role} value={role}>{role}</option>
+        ))}
+      </select>
+    )
+  }
+
+  const renderAdminAccessBtn = (u: AppUser) => {
+    if (!isSuperAdmin) return null
+    if (u.role === 'admin') {
+      return (
+        <Btn sm variant="outline" disabled={updateRole.isPending} onClick={() => {
+          if (confirm(`Remove admin access from ${u.name}? They will become a regular user.`)) {
+            updateRole.mutate({ id: u.id, role: 'user' })
+          }
+        }}>
+          Remove Admin
+        </Btn>
+      )
+    }
+    return (
+      <Btn sm variant="primary" disabled={updateRole.isPending} onClick={() => {
+        if (confirm(`Grant admin access to ${u.name}? They will be able to sign in to this dashboard.`)) {
+          updateRole.mutate({ id: u.id, role: 'admin' })
+        }
+      }}>
+        Make Admin
+      </Btn>
+    )
+  }
 
   const toggleSort = (field: keyof AppUser) => {
     if (field === sortBy) setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
@@ -270,20 +317,8 @@ export function UsersPage() {
                     <td style={{ fontWeight:600 }}>{u.routesContributed ?? 0}</td>
                     <td>
                       <div style={{ display:'flex', gap:5, alignItems:'center', flexWrap:'nowrap' }}>
-                        <select
-                          value={(u.role === 'moderator' ? 'moderator' : 'user') as UserRole}
-                          onChange={(e) => {
-                            const nextRole = e.target.value as UserRole
-                            const currentRole = (u.role === 'moderator' ? 'moderator' : 'user') as UserRole
-                            if (nextRole !== currentRole) updateRole.mutate({ id: u.id, role: nextRole })
-                          }}
-                          disabled={updateRole.isPending}
-                          style={{ width:'auto', minWidth:112, fontSize:'0.76rem', padding:'5px 8px' }}
-                        >
-                          {roleOptions.map((role) => (
-                            <option key={role} value={role}>{role}</option>
-                          ))}
-                        </select>
+                        {renderRoleControl(u, 112)}
+                        {renderAdminAccessBtn(u)}
                         {u.status === 'banned' ? (
                           <Btn sm variant="success" onClick={() => unban.mutate(u.id)}>Unban</Btn>
                         ) : (
@@ -319,21 +354,9 @@ export function UsersPage() {
                 </div>
                 <div style={{ color:'var(--text-secondary)', fontSize:'0.8rem' }}>{u.email}</div>
                 <div style={{ display:'flex', gap:6 }}><StatusBadge status={getRestrictionDaysLabel(u)} /></div>
-                <div style={{ display:'flex', gap:5 }}>
-                  <select
-                    value={(u.role === 'moderator' ? 'moderator' : 'user') as UserRole}
-                    onChange={(e) => {
-                      const nextRole = e.target.value as UserRole
-                      const currentRole = (u.role === 'moderator' ? 'moderator' : 'user') as UserRole
-                      if (nextRole !== currentRole) updateRole.mutate({ id: u.id, role: nextRole })
-                    }}
-                    disabled={updateRole.isPending}
-                    style={{ width:'auto', minWidth:110, fontSize:'0.76rem', padding:'5px 8px' }}
-                  >
-                    {roleOptions.map((role) => (
-                      <option key={role} value={role}>{role}</option>
-                    ))}
-                  </select>
+                <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                  {renderRoleControl(u, 110)}
+                  {renderAdminAccessBtn(u)}
                   {u.status === 'banned' ? (
                     <Btn sm variant="success" onClick={() => unban.mutate(u.id)}>Unban</Btn>
                   ) : (
