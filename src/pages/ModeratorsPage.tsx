@@ -1,7 +1,6 @@
 ﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getModeratorStats, updateUserRole } from '@/lib/firestoreApi'
 import { Shield } from 'lucide-react'
-import { useAuth } from '@/hooks/useAuth'
 import type { UserRole } from '@/types/models'
 
 const PALETTE = ['#2E7CF6', '#9B7FE8', '#3EC97A', '#E05C6A', '#FFB547']
@@ -48,7 +47,6 @@ function StatusBadge({ status }: { status?: string }) {
 
 export function ModeratorsPage() {
   const qc = useQueryClient()
-  const { isSuperAdmin } = useAuth()
   const { data = [], isLoading, isError, error } = useQuery({ queryKey: ['moderators'], queryFn: getModeratorStats })
   const roleOptions: UserRole[] = ['user', 'moderator']
 
@@ -137,7 +135,7 @@ export function ModeratorsPage() {
 
                         updateRole.mutate({ id: m.id, role: nextRole })
                       }}
-                      disabled={updateRole.isPending || !isSuperAdmin}
+                      disabled={updateRole.isPending}
                       style={{ width:'auto', minWidth:124, fontSize:'0.76rem', padding:'5px 8px' }}
                     >
                       {roleOptions.map((role) => (

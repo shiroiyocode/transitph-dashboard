@@ -64,7 +64,6 @@ function Btn({ variant = 'outline', sm, icon, children, disabled, onClick, style
 function RoleBadge({ role }: { role?: string }) {
   const s: React.CSSProperties =
     role === 'superadmin' ? { background: 'rgba(46,124,246,0.12)', color: '#2E7CF6', border: '1px solid rgba(46,124,246,0.2)' }
-    : role === 'admin' ? { background: 'rgba(62,201,122,0.12)', color: '#2FA866', border: '1px solid rgba(62,201,122,0.25)' }
     : role === 'moderator' ? { background: 'rgba(155,127,232,0.12)', color: '#9B7FE8', border: '1px solid rgba(155,127,232,0.2)' }
     : { background: 'rgba(122,146,178,0.10)', color: '#7A92B2', border: '1px solid rgba(122,146,178,0.18)' }
   return (
@@ -104,7 +103,7 @@ function getRestrictionDaysLabel(user: AppUser) {
 
 export function UsersPage() {
   const qc = useQueryClient()
-  const { isSuperAdmin } = useAuth()
+  const { user: currentUser } = useAuth()
   const { data = [], isLoading, isError, error } = useQuery({ queryKey: ['users'], queryFn: getUsers })
 
   const [search, setSearch] = useState('')
@@ -122,13 +121,13 @@ export function UsersPage() {
   const roleOptions: UserRole[] = ['user', 'moderator']
 
   const list = useMemo(() => data
-    .filter((u) => u.role !== 'superadmin')
+    .filter((u) => u.id !== currentUser?.uid) // other admins stay listed so they can be removed
     .filter((u) => statusFilter === 'all' || u.status === statusFilter)
     .filter((u) => `${u.name ?? ''} ${u.email ?? ''}`.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       const av = String(a[sortBy] ?? ''), bv = String(b[sortBy] ?? '')
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
-    }), [data, statusFilter, search, sortBy, sortDir])
+    }), [data, currentUser?.uid, statusFilter, search, sortBy, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE))
   const paginated = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -173,7 +172,7 @@ export function UsersPage() {
   })
 
   const renderRoleControl = (u: AppUser, minWidth: number) => {
-    if (u.role === 'admin') return <RoleBadge role="admin" />
+    if (u.role === 'superadmin') return <RoleBadge role="superadmin" />
     const currentRole: UserRole = u.role === 'moderator' ? 'moderator' : 'user'
     return (
       <select
@@ -182,7 +181,7 @@ export function UsersPage() {
           const nextRole = e.target.value as UserRole
           if (nextRole !== currentRole) updateRole.mutate({ id: u.id, role: nextRole })
         }}
-        disabled={updateRole.isPending || !isSuperAdmin}
+        disabled={updateRole.isPending}
         style={{ width:'auto', minWidth, fontSize:'0.76rem', padding:'5px 8px' }}
       >
         {roleOptions.map((role) => (
@@ -192,9 +191,9 @@ export function UsersPage() {
     )
   }
 
+  // Admin access is the superadmin role itself: the Firestore rules only know that one.
   const renderAdminAccessBtn = (u: AppUser) => {
-    if (!isSuperAdmin) return null
-    if (u.role === 'admin') {
+    if (u.role === 'superadmin') {
       return (
         <Btn sm variant="outline" disabled={updateRole.isPending} onClick={() => {
           if (confirm(`Remove admin access from ${u.name}? They will become a regular user.`)) {
@@ -207,8 +206,8 @@ export function UsersPage() {
     }
     return (
       <Btn sm variant="primary" disabled={updateRole.isPending} onClick={() => {
-        if (confirm(`Grant admin access to ${u.name}? They will be able to sign in to this dashboard.`)) {
-          updateRole.mutate({ id: u.id, role: 'admin' })
+        if (confirm(`Make ${u.name} an admin? They become a superadmin with full access to this dashboard.`)) {
+          updateRole.mutate({ id: u.id, role: 'superadmin' })
         }
       }}>
         Make Admin

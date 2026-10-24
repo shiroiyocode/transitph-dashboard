@@ -15,7 +15,6 @@ interface AuthContextValue {
   isLoading: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  /** True for superadmins and for accounts a superadmin granted admin access (same powers). */
   isSuperAdmin: boolean
 }
 
@@ -48,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       role,
       isLoading,
-      isSuperAdmin: role === 'superadmin' || role === 'admin',
+      isSuperAdmin: role === 'superadmin',
       login: async (email: string, password: string) => {
         setIsLoading(true)
         try {

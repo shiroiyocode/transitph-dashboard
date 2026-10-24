@@ -56,7 +56,7 @@ export function LoginPage() {
         setError(null)
       } else {
         setError(
-          `Login failed. Ensure your account has the admin or superadmin role. ${attemptsLeft} of ${MAX_FAILED_ATTEMPTS} attempts left.`,
+          `Login failed. Ensure your account has the superadmin role. ${attemptsLeft} of ${MAX_FAILED_ATTEMPTS} attempts left.`,
         )
       }
     } finally {
