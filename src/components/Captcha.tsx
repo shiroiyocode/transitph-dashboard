@@ -20,7 +20,13 @@ const SCRIPT_ID = 'tph-recaptcha-script'
 function loadScript(): Promise<Grecaptcha> {
   return new Promise((resolve, reject) => {
     if (window.grecaptcha?.render) return resolve(window.grecaptcha)
-    window.onTphCaptchaLoaded = () => window.grecaptcha ? resolve(window.grecaptcha) : reject(new Error('reCAPTCHA unavailable'))
+    // Several mounts can wait on one script load, so chain callbacks instead of overwriting.
+    const previous = window.onTphCaptchaLoaded
+    window.onTphCaptchaLoaded = () => {
+      previous?.()
+      if (window.grecaptcha?.render) resolve(window.grecaptcha)
+      else reject(new Error('reCAPTCHA unavailable'))
+    }
     if (document.getElementById(SCRIPT_ID)) return
     const script = document.createElement('script')
     script.id = SCRIPT_ID
@@ -40,10 +46,17 @@ export function Captcha({ onToken, resetKey }: { onToken: (token: string | null)
 
   useEffect(() => {
     let cancelled = false
+    const host = containerRef.current
+    // A fresh element per mount: Google keeps state on the element it rendered into,
+    // so reusing one (StrictMode, logout -> login remount) can leave a dead widget.
+    const mount = document.createElement('div')
+    host?.appendChild(mount)
+    onTokenRef.current(null)
+
     loadScript()
       .then((grecaptcha) => {
-        if (cancelled || !containerRef.current || widgetId.current !== null) return
-        widgetId.current = grecaptcha.render(containerRef.current, {
+        if (cancelled) return
+        widgetId.current = grecaptcha.render(mount, {
           sitekey: SITE_KEY,
           callback: (token: string) => onTokenRef.current(token),
           'expired-callback': () => onTokenRef.current(null),
@@ -51,7 +64,15 @@ export function Captcha({ onToken, resetKey }: { onToken: (token: string | null)
         })
       })
       .catch(() => onTokenRef.current(null))
-    return () => { cancelled = true }
+
+    return () => {
+      cancelled = true
+      if (widgetId.current !== null) {
+        try { window.grecaptcha?.reset(widgetId.current) } catch { /* widget already gone */ }
+        widgetId.current = null
+      }
+      mount.remove()
+    }
   }, [])
 
   useEffect(() => {
