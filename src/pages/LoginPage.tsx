@@ -82,9 +82,6 @@ export function LoginPage() {
           <h2 style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.025em', marginBottom: 4 }}>
             Welcome back
           </h2>
-          <p style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
-            Sign in with your Firebase account credentials
-          </p>
         </div>
 
         <form onSubmit={onSubmit} style={{ display: 'grid', gap: 14 }}>
