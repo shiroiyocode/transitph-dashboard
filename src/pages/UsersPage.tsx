@@ -237,7 +237,7 @@ export function UsersPage() {
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 12px', background:'rgba(46,124,246,0.08)', border:'1px solid rgba(46,124,246,0.15)', borderRadius:10 }}>
           <Users size={14} color="#2E7CF6" />
-          <span style={{ fontSize:'0.82rem', fontWeight:700, color:'#2E7CF6' }}>{list.length} users</span>
+          <span style={{ fontSize:'0.82rem', fontWeight:700, color:'#2E7CF6' }}>{data.length} users</span>
         </div>
       </div>
 
