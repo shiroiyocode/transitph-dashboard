@@ -57,9 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login: async (email: string, password: string) => {
         setIsLoading(true)
         try {
-          await signInWithEmailAndPassword(auth, email, password)
+          const credential = await signInWithEmailAndPassword(auth, email, password)
+          // Valid credentials but not a superadmin: sign back out so it counts as a failed attempt.
+          if ((await getCurrentUserRole(credential.user.uid)) !== 'superadmin') {
+            await signOut(auth)
+            throw Object.assign(new Error('Account is not a superadmin'), { code: 'auth/not-superadmin' })
+          }
         } catch (error) {
-          // Wrong password: nothing is loading.
+          // Wrong password or wrong role: nothing is loading.
           setIsLoading(false)
           throw error
         }

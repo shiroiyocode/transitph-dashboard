@@ -49,7 +49,12 @@ export function LoginPage() {
       await login(email, password)
       clearFailedAttempts()
       navigate('/')
-    } catch {
+    } catch (err) {
+      // A dropped connection says nothing about the password, so it doesn't use up an attempt.
+      if ((err as { code?: string }).code === 'auth/network-request-failed') {
+        setError('Network error. Check your connection and try again.')
+        return
+      }
       const attemptsLeft = recordFailedAttempt()
       if (attemptsLeft === 0) {
         setLockoutMs(getLockoutRemainingMs())
