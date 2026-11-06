@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Scale } from 'lucide-react'
-import { decideAppeal, getAppeals } from '@/lib/firestoreApi'
+import { Trash2 } from 'lucide-react'
+import { decideAppeal, deleteAppeal, getAppeals } from '@/lib/firestoreApi'
 import { useAuth } from '@/hooks/useAuth'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { AppealItem } from '@/types/models'
@@ -17,7 +17,7 @@ function StatusBadge({ status }: { status: AppealItem['status'] }) {
 const DECIDED_SHOWN = 10
 
 /**
- * Riders' appeals against a ban or restriction. Lift lets them back in;
+ * Commuters' appeals against a ban or restriction. Lift lets them back in;
  * Uphold keeps the decision and sends an optional reply they see the next
  * time they open the app.
  */
@@ -39,6 +39,15 @@ export function AppealsSection() {
     },
     onError: (err) => setError(`Couldn't save the decision. ${err instanceof Error ? err.message : ''}`),
   })
+  const remove = useMutation({
+    mutationFn: (appeal: AppealItem) => deleteAppeal(appeal.id),
+    onSuccess: async () => {
+      setError(null)
+      await qc.invalidateQueries({ queryKey: ['appeals'] })
+      await qc.invalidateQueries({ queryKey: ['users'] })
+    },
+    onError: (err) => setError(`Couldn't delete the appeal. ${err instanceof Error ? err.message : ''}`),
+  })
 
   const waiting = data.filter((a) => a.status === 'pending')
   const shown = [...waiting, ...data.filter((a) => a.status !== 'pending').slice(0, DECIDED_SHOWN)]
@@ -47,10 +56,9 @@ export function AppealsSection() {
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Scale size={16} color="var(--accent)" />
         <span style={{ fontWeight: 600 }}>Appeals{waiting.length > 0 ? ` (${waiting.length} waiting)` : ''}</span>
         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-          Banned or restricted riders asking for the decision to change
+          Banned or restricted commuters asking for the decision to change
         </span>
       </div>
       {error && <div className="state-banner error">{error}</div>}
@@ -64,7 +72,7 @@ export function AppealsSection() {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>Rider</th><th>Type</th><th>Reason given</th><th>Their appeal</th><th>Sent</th><th>Status</th><th>Actions</th></tr>
+              <tr><th>Commuter</th><th>Type</th><th>Reason given</th><th>Their appeal</th><th>Sent</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {shown.map((a) => (
@@ -85,18 +93,32 @@ export function AppealsSection() {
                   <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{a.createdAt?.toDate().toLocaleString() ?? '-'}</td>
                   <td><StatusBadge status={a.status} /></td>
                   <td>
-                    {a.status === 'pending' ? (
-                      <div className="action-group">
-                        <button className="btn btn-sm btn-success" disabled={decide.isPending} onClick={() => setDeciding({ appeal: a, lift: true })}>
-                          Lift
-                        </button>
-                        <button className="btn btn-sm btn-outline" disabled={decide.isPending} onClick={() => setDeciding({ appeal: a, lift: false })}>
-                          Uphold
-                        </button>
-                      </div>
-                    ) : (
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>-</span>
-                    )}
+                    <div className="action-group">
+                      {a.status === 'pending' && (
+                        <>
+                          <button className="btn btn-sm btn-success" disabled={decide.isPending} onClick={() => setDeciding({ appeal: a, lift: true })}>
+                            Lift
+                          </button>
+                          <button className="btn btn-sm btn-outline" disabled={decide.isPending} onClick={() => setDeciding({ appeal: a, lift: false })}>
+                            Uphold
+                          </button>
+                        </>
+                      )}
+                      <button
+                        className="btn btn-sm btn-danger"
+                        title="Delete this appeal"
+                        disabled={remove.isPending}
+                        style={{ gap: 4 }}
+                        onClick={() => {
+                          const message = a.status === 'pending'
+                            ? 'Delete this appeal? The ban or restriction stays as it is, and the commuter will be able to appeal again.'
+                            : 'Delete this appeal?'
+                          if (confirm(message)) remove.mutate(a)
+                        }}
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -112,8 +134,8 @@ export function AppealsSection() {
           </DialogHeader>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: 12 }}>
             {deciding?.lift
-              ? `${deciding.appeal.userName || 'The rider'} can sign in again right away.`
-              : `${deciding?.appeal.userName || 'The rider'} stays locked out and sees that their appeal was reviewed, with your reply if you write one.`}
+              ? `${deciding.appeal.userName || 'The commuter'} can sign in again right away.`
+              : `${deciding?.appeal.userName || 'The commuter'} stays locked out and sees that their appeal was reviewed, with your reply if you write one.`}
           </p>
           {!deciding?.lift && (
             <textarea
@@ -121,7 +143,7 @@ export function AppealsSection() {
               onChange={(e) => setReply(e.target.value)}
               maxLength={500}
               rows={3}
-              placeholder="Reply to the rider (optional)"
+              placeholder="Reply to the commuter (optional)"
               style={{ width: '100%' }}
             />
           )}

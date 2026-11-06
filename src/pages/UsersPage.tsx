@@ -104,14 +104,14 @@ function getRestrictionDaysLabel(user: AppUser) {
 
 /**
  * The reason picker and note shown in the Ban and Restrict dialogs. The
- * rider sees both, so a ban or restriction can't go out without a reason.
+ * commuter sees both, so a ban or restriction can't go out without a reason.
  */
 function ReasonFields({ reasonCode, note, onReason, onNote }: {
   reasonCode: string; note: string; onReason: (code: string) => void; onNote: (note: string) => void
 }) {
   return (
     <>
-      <label style={{ color:'var(--text-secondary)', fontSize:'0.78rem', marginBottom:6, display:'block' }}>Reason (shown to the rider)</label>
+      <label style={{ color:'var(--text-secondary)', fontSize:'0.78rem', marginBottom:6, display:'block' }}>Reason (shown to the commuter)</label>
       <select value={reasonCode} onChange={(e) => onReason(e.target.value)} style={{ width:'100%', marginBottom:10 }}>
         <option value="" disabled>Pick a reason</option>
         {LOCKOUT_REASONS.map((r) => (
@@ -123,7 +123,7 @@ function ReasonFields({ reasonCode, note, onReason, onNote }: {
         onChange={(e) => onNote(e.target.value)}
         maxLength={500}
         rows={3}
-        placeholder={reasonNeedsNote(reasonCode) ? 'Say what they did (required)' : 'Note to the rider (optional)'}
+        placeholder={reasonNeedsNote(reasonCode) ? 'Say what they did (required)' : 'Note to the commuter (optional)'}
         style={{ width:'100%', marginBottom:10 }}
       />
     </>
@@ -137,7 +137,7 @@ function reasonReady(reasonCode: string, note: string) {
 
 function AppealBadge() {
   return (
-    <span title="This rider sent an appeal. Decide it on Feedback & Reports." style={{
+    <span title="This commuter sent an appeal. Decide it on Feedback & Reports." style={{
       background: 'rgba(46,124,246,0.12)', color: '#2E7CF6', border: '1px solid rgba(46,124,246,0.2)',
       display:'inline-flex', alignItems:'center', gap:5, padding:'3px 10px', borderRadius:99, fontSize:'0.72rem', fontWeight:700, whiteSpace:'nowrap',
     }}>
@@ -168,7 +168,7 @@ export function UsersPage() {
   const [banReason, setBanReason] = useState('')
   const [banNote, setBanNote] = useState('')
   const [mutationError, setMutationError] = useState<string | null>(null)
-  // Riders with an appeal still waiting, for the badge in the list.
+  // Commuters with an appeal still waiting, for the badge in the list.
   const { data: appeals = [] } = useQuery({ queryKey: ['appeals'], queryFn: getAppeals })
   const appealWaiting = useMemo(
     () => new Set(appeals.filter((a) => a.status === 'pending').map((a) => a.userId)),
@@ -497,7 +497,7 @@ export function UsersPage() {
           <DialogHeader><DialogTitle>Confirm Restriction</DialogTitle></DialogHeader>
           <p style={{ color:'var(--text-secondary)', fontSize:'0.85rem', marginBottom:12 }}>
             Pick a reason, then type <strong style={{ color:'#E05C6A' }}>RESTRICT</strong> to confirm a temporary restriction.
-            The rider sees the reason and your note, and can appeal once.
+            The commuter sees the reason and your note, and can appeal once.
           </p>
           <ReasonFields reasonCode={restrictReason} note={restrictNote} onReason={setRestrictReason} onNote={setRestrictNote} />
           <label style={{ color:'var(--text-secondary)', fontSize:'0.78rem', marginBottom:6, display:'block' }}>Restriction length</label>
@@ -531,7 +531,7 @@ export function UsersPage() {
           <DialogHeader><DialogTitle>Confirm Ban</DialogTitle></DialogHeader>
           <p style={{ color:'var(--text-secondary)', fontSize:'0.85rem', marginBottom:12 }}>
             Pick a reason, then type <strong style={{ color:'#E05C6A' }}>BAN</strong> to permanently ban this account.
-            The rider sees the reason and your note, and can appeal once.
+            The commuter sees the reason and your note, and can appeal once.
           </p>
           <ReasonFields reasonCode={banReason} note={banNote} onReason={setBanReason} onNote={setBanNote} />
           <input

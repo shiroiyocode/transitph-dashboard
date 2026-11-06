@@ -275,7 +275,7 @@ export function PostsPage() {
                   <span className="dialog-field-value">{value}</span>
                 </div>
               ))}
-              {/* Why riders reported it, so staff can judge without leaving the dialog. */}
+              {/* Why commuters reported it, so staff can judge without leaving the dialog. */}
               {(() => {
                 const reports = feedback.filter((f) => f.type === 'report' && f.postId === preview.id)
                 return (

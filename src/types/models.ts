@@ -95,7 +95,7 @@ export interface PostItem {
   createdAt?: Timestamp
 }
 
-/** A rider's report on a route; shows on every route on the same road for a
+/** A commuter's report on a route; shows on every route on the same road for a
  * day, or until removed when kept. */
 export interface RouteReportItem {
   id: string
@@ -119,7 +119,7 @@ export interface FeedbackItem {
   userId?: string
 }
 
-/** users/{uid}/moderation/current: why a rider is banned or restricted. */
+/** users/{uid}/moderation/current: why a commuter is banned or restricted. */
 export interface LockoutRecordItem {
   action: 'ban' | 'restrict'
   reasonCode: string
@@ -133,7 +133,7 @@ export interface LockoutRecordItem {
 
 export type AppealStatus = 'pending' | 'lifted' | 'upheld'
 
-/** appeals/{uid}_{lockoutId}: a rider asking to undo a ban or restriction. */
+/** appeals/{uid}_{lockoutId}: a commuter asking to undo a ban or restriction. */
 export interface AppealItem {
   id: string
   userId: string

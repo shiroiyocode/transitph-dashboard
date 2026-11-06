@@ -21,7 +21,7 @@ type RouteTrustScore = {
 
 function computeRouteTrust(route: RouteItem): RouteTrustScore {
   // Approval keeps a route at the base score (same as the app's
-  // RouteTrustService): trust comes from riders' confirmations.
+  // RouteTrustService): trust comes from commuters' confirmations.
   const approvalPoints = route.status === 'rejected' ? 0 : 20
 
   const summary = route.feedbackSummary
@@ -118,7 +118,7 @@ function EditedBadge({ editCount }: { editCount?: number }) {
   )
 }
 
-// Same speeds (km/h) the app uses for a rider route's own ETA: drawn length of
+// Same speeds (km/h) the app uses for a commuter route's own ETA: drawn length of
 // each step ÷ speed, no waiting time.
 function speedKmh(mode: string) {
   const m = mode.toLowerCase()

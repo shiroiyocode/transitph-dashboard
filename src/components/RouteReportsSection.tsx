@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pin, Trash2, TriangleAlert } from 'lucide-react'
+import { Pin, Trash2 } from 'lucide-react'
 import { getRouteReports, keepRouteReport, removeRouteReport } from '@/lib/firestoreApi'
 import type { RouteReportItem } from '@/types/models'
 
@@ -19,7 +19,7 @@ function showsFor(item: RouteReportItem) {
   return h >= 1 ? `Shows ${h} h more` : `Shows ${Math.max(1, Math.round(ms / 60000))} min more`
 }
 
-/** Riders' route reports: each shows on every route on its road for a day.
+/** Commuters' route reports: each shows on every route on its road for a day.
  * Keep holds one until removed; Remove takes it down now. */
 export function RouteReportsSection() {
   const qc = useQueryClient()
@@ -31,7 +31,6 @@ export function RouteReportsSection() {
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <TriangleAlert size={16} color="var(--warning)" />
         <span style={{ fontWeight: 600 }}>Route reports</span>
         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
           Shown on every route on the same road for a day

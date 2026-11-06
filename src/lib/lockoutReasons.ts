@@ -1,12 +1,12 @@
 /**
- * Reasons staff can pick when banning or restricting a rider. Each points at
- * the part of the Terms the rider broke, so the rider sees the rule and not
+ * Reasons staff can pick when banning or restricting a commuter. Each points at
+ * the part of the Terms the commuter broke, so the commuter sees the rule and not
  * just a label. Keep in step with the app's `lib/models/lockout.dart`.
  */
 export interface LockoutReason {
   code: string
   label: string
-  /** Where it sits in the Terms, shown to the rider. Empty for "Other". */
+  /** Where it sits in the Terms, shown to the commuter. Empty for "Other". */
   termsSection: string
 }
 

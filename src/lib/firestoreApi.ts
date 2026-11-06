@@ -575,7 +575,7 @@ function buildDashboardStatsFromData(
       }
     })
 
-  // Appeals still waiting for a decision: a locked-out rider is waiting.
+  // Appeals still waiting for a decision: a locked-out commuter is waiting.
   const recentAppeals: DashboardActivity[] = appealDocs
     .map(mapAppealDoc)
     .filter((a) => a.status === 'pending')
@@ -583,7 +583,7 @@ function buildDashboardStatsFromData(
     .map((a) => ({
       id: `a-${a.id}`,
       type: 'appeal',
-      description: `${a.userName || a.userEmail || 'A rider'} appealed their ${a.action === 'ban' ? 'ban' : 'restriction'}`,
+      description: `${a.userName || a.userEmail || 'A commuter'} appealed their ${a.action === 'ban' ? 'ban' : 'restriction'}`,
       time: toRelativeTimeLabel(a.createdAt),
       timestampMs: toTimestampMs(a.createdAt),
       severity: 'warning' as const,
@@ -624,7 +624,7 @@ export async function getCurrentUserRole(uid: string): Promise<UserRole | null> 
 export async function getUsers(): Promise<AppUser[]> {
   const docs = await getDocsWithCreatedAtFallback(usersCol)
   const users = docs.map(mapUserDoc)
-  // Only banned and restricted riders have a reason worth loading, so this
+  // Only banned and restricted commuters have a reason worth loading, so this
   // stays a handful of reads, not one per user.
   await Promise.all(
     users
@@ -648,7 +648,7 @@ function lockoutRef(userId: string) {
   return doc(db, 'users', userId, 'moderation', 'current')
 }
 
-/** Why a staff member is banning or restricting: shown to the rider. */
+/** Why a staff member is banning or restricting: shown to the commuter. */
 export interface LockoutReasonInput {
   reasonCode: string
   note: string
@@ -659,7 +659,7 @@ function newLockoutRecord(action: 'ban' | 'restrict', input: LockoutReasonInput,
   const reason = lockoutReasonByCode(input.reasonCode)
   if (!reason) throw new Error('Pick a reason first.')
   if (reasonNeedsNote(reason.code) && !input.note.trim()) {
-    throw new Error('Say what the rider did when the reason is "Other".')
+    throw new Error('Say what the commuter did when the reason is "Other".')
   }
   return {
     action,
@@ -677,7 +677,7 @@ function newLockoutRecord(action: 'ban' | 'restrict', input: LockoutReasonInput,
 }
 
 /**
- * The reason record, but only when it belongs to the lockout the rider has
+ * The reason record, but only when it belongs to the lockout the commuter has
  * now. A record left from an older restriction must not explain a ban made
  * later without one.
  */
@@ -705,7 +705,7 @@ async function getLockoutRecord(userId: string, user: AppUser): Promise<LockoutR
   }
 }
 
-/** Restricts a rider and saves why, in one write so neither goes without the other. */
+/** Restricts a commuter and saves why, in one write so neither goes without the other. */
 export async function restrictUser(userId: string, days: number, reason: LockoutReasonInput) {
   const boundedDays = Math.max(1, Math.min(MAX_RESTRICTION_DAYS, Math.floor(days)))
   const restrictedUntil = Timestamp.fromDate(
@@ -724,7 +724,7 @@ export async function restrictUser(userId: string, days: number, reason: Lockout
   await batch.commit()
 }
 
-/** Bans a rider for good and saves why. */
+/** Bans a commuter for good and saves why. */
 export async function banUser(userId: string, reason: LockoutReasonInput) {
   const batch = writeBatch(db)
   batch.update(doc(db, 'users', userId), {
@@ -792,7 +792,7 @@ export async function getAppeals(): Promise<AppealItem[]> {
 }
 
 /**
- * Lifts the lockout or keeps it ("uphold"). Either way the rider sees the
+ * Lifts the lockout or keeps it ("uphold"). Either way the commuter sees the
  * outcome, and the reply when it's kept, next time they open the app.
  */
 export async function decideAppeal(appeal: AppealItem, lift: boolean, reply: string, reviewerUid?: string) {
@@ -803,6 +803,11 @@ export async function decideAppeal(appeal: AppealItem, lift: boolean, reply: str
     reviewedBy: reviewerUid ?? null,
     reviewedAt: serverTimestamp(),
   })
+}
+
+/** Removes an appeal. Doesn't change the lockout itself. */
+export async function deleteAppeal(appealId: string) {
+  await deleteDoc(doc(db, 'appeals', appealId))
 }
 
 export async function deleteUser(userId: string) {
