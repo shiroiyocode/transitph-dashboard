@@ -477,6 +477,7 @@ function mapPostDoc(d: QueryDocumentSnapshot<DocumentData>): PostItem {
   const data = d.data()
   const status = data.moderationStatus ?? 'pending'
   const isFlagged = Boolean(data.isFlagged)
+  const taggedRoute = data.taggedLocation?.type === 'route' ? data.taggedLocation : undefined
   return {
     id: d.id,
     userId: data.userId ?? '',
@@ -485,6 +486,8 @@ function mapPostDoc(d: QueryDocumentSnapshot<DocumentData>): PostItem {
     category: data.category ?? 'general',
     content: data.content ?? '',
     images: data.images ?? data.imageUrls ?? [],
+    routeId: toNonEmptyString(data.routeId) ?? toNonEmptyString(taggedRoute?.id) ?? undefined,
+    routeLabel: toNonEmptyString(taggedRoute?.name) ?? undefined,
     moderationStatus: isFlagged && status === 'pending' ? 'flagged' : status,
     isFlagged,
     createdAt: normalizeTimestamp(data.createdAt ?? data.timestamp),

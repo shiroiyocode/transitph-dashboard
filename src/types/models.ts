@@ -84,6 +84,10 @@ export interface PostItem {
   category?: string
   content: string
   images?: string[]
+  /** Route the author attached to the post, if any. */
+  routeId?: string
+  /** "Start → End" label saved with the attached route. */
+  routeLabel?: string
   moderationStatus: PostStatus
   isFlagged?: boolean
   createdAt?: Timestamp

@@ -1,6 +1,6 @@
 ﻿import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deletePost, getFeedback, getPosts, updateFeedbackStatus, updatePostStatus } from '@/lib/firestoreApi'
+import { deletePost, getFeedback, getPosts, getRoutes, updateFeedbackStatus, updatePostStatus } from '@/lib/firestoreApi'
 import { useAuth } from '@/hooks/useAuth'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Flag, MessageSquare } from 'lucide-react'
@@ -20,6 +20,22 @@ export function PostsPage() {
   const { data: feedback = [] } = useQuery({ queryKey: ['feedback'], queryFn: getFeedback })
   const [preview, setPreview] = useState<PostItem | null>(null)
   const [activeTab, setActiveTab] = useState<'reported' | 'all'>('reported')
+  const { data: routes = [], isLoading: routesLoading } = useQuery({
+    queryKey: ['routes'],
+    queryFn: getRoutes,
+    enabled: Boolean(preview?.routeId),
+  })
+  const attachedRoute = preview?.routeId ? routes.find((r) => r.id === preview.routeId) : undefined
+
+  const describeAttachedRoute = (post: PostItem) => {
+    if (!post.routeId) return 'No route attached'
+    if (attachedRoute) {
+      const status = attachedRoute.status.charAt(0).toUpperCase() + attachedRoute.status.slice(1)
+      return `${attachedRoute.startLocation} → ${attachedRoute.endLocation} (${status})`
+    }
+    if (routesLoading) return post.routeLabel ?? 'Loading route...'
+    return post.routeLabel ? `${post.routeLabel} (route no longer exists)` : 'Route no longer exists'
+  }
 
   const pendingReportsByPost = useMemo(() => {
     const map = new Map<string, string[]>()
@@ -252,7 +268,7 @@ export function PostsPage() {
               {[
                 ['Category', preview.category],
                 ['Content', preview.content],
-                ['Images', (preview.images ?? []).join(', ') || 'No images attached'],
+                ['Route', describeAttachedRoute(preview)],
               ].map(([label, value]) => (
                 <div key={String(label)} className="dialog-field">
                   <span className="dialog-field-label">{label}</span>

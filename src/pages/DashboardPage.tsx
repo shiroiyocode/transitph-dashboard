@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { getDashboardStats, subscribeDashboardStats } from '@/lib/firestoreApi'
 import {
-  Activity, CheckCircle, TrendingDown, TrendingUp, Users, XCircle,
+  Activity, CheckCircle, TrendingDown, Users, XCircle,
 } from 'lucide-react'
 import type { DashboardActivitySeverity, DashboardActivityType, DashboardStats } from '@/types/models'
 
@@ -17,7 +17,6 @@ const buildCards = (data: any) => [
   { label: 'Banned Users',    value: data.bannedUsers,     icon: XCircle,     bg: 'rgba(224,92,106,0.10)', color: '#E05C6A' },
   { label: 'Pending Routes',  value: data.routes.pending,  icon: TrendingDown, bg: 'rgba(255,181,71,0.12)', color: '#FFB547' },
   { label: 'Approved Routes', value: data.routes.approved, icon: CheckCircle, bg: 'rgba(62,201,122,0.10)', color: '#3EC97A' },
-  { label: 'Rejected Routes', value: data.routes.rejected, icon: TrendingUp,  bg: 'rgba(224,92,106,0.10)', color: '#E05C6A' },
 ]
 
 function ChartTooltip({ active, payload, label }: any) {
