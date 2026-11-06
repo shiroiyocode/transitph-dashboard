@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pin, Trash2 } from 'lucide-react'
 import { getRouteReports, keepRouteReport, removeRouteReport } from '@/lib/firestoreApi'
+import { Pager } from '@/components/Pager'
+import { usePaged } from '@/hooks/usePaged'
 import type { RouteReportItem } from '@/types/models'
 
 function ago(item: RouteReportItem) {
@@ -27,6 +29,7 @@ export function RouteReportsSection() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['route-reports'] })
   const keep = useMutation({ mutationFn: keepRouteReport, onSuccess: refresh })
   const remove = useMutation({ mutationFn: removeRouteReport, onSuccess: refresh })
+  const paged = usePaged(data)
 
   return (
     <div style={{ display: 'grid', gap: 10 }}>
@@ -49,7 +52,7 @@ export function RouteReportsSection() {
               <tr><th>Issue</th><th>Route</th><th>Details</th><th>Reported</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
-              {data.map((r) => (
+              {paged.rows.map((r) => (
                 <tr key={r.id}>
                   <td style={{ fontWeight: 600 }}>{r.type}</td>
                   <td style={{ fontSize: '0.82rem' }}>{r.routeLabel}</td>
@@ -74,6 +77,7 @@ export function RouteReportsSection() {
           </table>
         </div>
       )}
+      <Pager {...paged} />
     </div>
   )
 }

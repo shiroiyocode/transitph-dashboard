@@ -4,6 +4,8 @@ import { Trash2 } from 'lucide-react'
 import { decideAppeal, deleteAppeal, getAppeals } from '@/lib/firestoreApi'
 import { useAuth } from '@/hooks/useAuth'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Pager } from '@/components/Pager'
+import { usePaged } from '@/hooks/usePaged'
 import type { AppealItem } from '@/types/models'
 
 function StatusBadge({ status }: { status: AppealItem['status'] }) {
@@ -11,10 +13,6 @@ function StatusBadge({ status }: { status: AppealItem['status'] }) {
   if (status === 'upheld') return <span className="badge badge-user"><span className="badge-dot" />Upheld</span>
   return <span className="badge badge-pending"><span className="badge-dot" />Waiting</span>
 }
-
-// Decided appeals stay listed for a while so staff can see what was done,
-// but only the latest few.
-const DECIDED_SHOWN = 10
 
 /**
  * Commuters' appeals against a ban or restriction. Lift lets them back in;
@@ -50,7 +48,9 @@ export function AppealsSection() {
   })
 
   const waiting = data.filter((a) => a.status === 'pending')
-  const shown = [...waiting, ...data.filter((a) => a.status !== 'pending').slice(0, DECIDED_SHOWN)]
+  // getAppeals already puts waiting appeals first, then newest decided.
+  // Every decided appeal stays listed, a page at a time.
+  const paged = usePaged(data)
   const close = () => { setDeciding(null); setReply('') }
 
   return (
@@ -66,7 +66,7 @@ export function AppealsSection() {
         <div className="skeleton" style={{ height: 48 }} />
       ) : isError ? (
         <div className="state-banner error">Failed to load appeals. The new Firestore rules may not be deployed yet.</div>
-      ) : !shown.length ? (
+      ) : !data.length ? (
         <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>No appeals right now.</div>
       ) : (
         <div className="table-wrap">
@@ -75,7 +75,7 @@ export function AppealsSection() {
               <tr><th>Commuter</th><th>Type</th><th>Reason given</th><th>Their appeal</th><th>Sent</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
-              {shown.map((a) => (
+              {paged.rows.map((a) => (
                 <tr key={a.id}>
                   <td style={{ fontSize: '0.82rem' }}>
                     <div style={{ fontWeight: 600 }}>{a.userName || 'Unknown'}</div>
@@ -126,6 +126,7 @@ export function AppealsSection() {
           </table>
         </div>
       )}
+      <Pager {...paged} />
 
       <Dialog open={Boolean(deciding)} onOpenChange={(open) => { if (!open) close() }}>
         <DialogContent>

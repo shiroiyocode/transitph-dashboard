@@ -13,6 +13,9 @@ const RoutePreviewMap = lazy(() =>
 
 const PAGE_SIZE = 12
 
+// Votes a trust question needs before it counts at full weight (same as the app).
+const FULL_WEIGHT_VOTES = 5
+
 type RouteTrustScore = {
   total: number
   label: 'High trust' | 'Moderate trust' | 'Needs verification'
@@ -32,17 +35,22 @@ function computeRouteTrust(route: RouteItem): RouteTrustScore {
   const operatingYes = summary?.stillOperatingYes ?? 0
   const operatingNo = summary?.stillOperatingNo ?? 0
 
+  // Each question gives up to its max points when commuters agree. It only
+  // counts fully once it has FULL_WEIGHT_VOTES votes, so one commuter can't
+  // push a route to the top (or the bottom) alone.
   const signedRatioPoints = (yes: number, no: number, maxPoints: number) => {
     const total = yes + no
     if (total <= 0) return 0
     const signedRatio = (yes - no) / total
-    return Math.max(-maxPoints, Math.min(maxPoints, Math.round(signedRatio * maxPoints)))
+    const weight = Math.min(1, total / FULL_WEIGHT_VOTES)
+    return Math.max(-maxPoints, Math.min(maxPoints, Math.round(signedRatio * weight * maxPoints)))
   }
 
+  // 22 + 22 + 21 = 65, so base 20 + 65 + freshness 15 can reach 100.
   const confirmationPoints =
-    signedRatioPoints(fareYes, fareNo, 12) +
-    signedRatioPoints(scheduleYes, scheduleNo, 12) +
-    signedRatioPoints(operatingYes, operatingNo, 11)
+    signedRatioPoints(fareYes, fareNo, 22) +
+    signedRatioPoints(scheduleYes, scheduleNo, 22) +
+    signedRatioPoints(operatingYes, operatingNo, 21)
 
   const refTime = route.updatedAt ?? route.createdAt
   let freshnessPoints = 0

@@ -1,7 +1,9 @@
 ﻿import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deleteFeedback, getFeedback, updateFeedbackStatus } from '@/lib/firestoreApi'
-import { Bell, CheckCircle, MessageSquare, XCircle } from 'lucide-react'
+import { Bell, CheckCircle, MessageSquare, Trash2, XCircle } from 'lucide-react'
+import { Pager } from '@/components/Pager'
+import { usePaged } from '@/hooks/usePaged'
 import { RouteReportsSection } from '@/components/RouteReportsSection'
 import { AppealsSection } from '@/components/AppealsSection'
 
@@ -29,21 +31,20 @@ export function FeedbackPage() {
 
   const pendingCount = data.filter((f) => f.type === 'feedback' && f.status === 'pending').length
 
+  const paged = usePaged(list)
+
+  // Resolve and Dismiss only change the status. The row stays, so it still
+  // shows under the Resolved / Dismissed filters. Delete removes it.
   const refresh = () => qc.invalidateQueries({ queryKey: ['feedback'] })
   const resolve = useMutation({
-    mutationFn: async (id: string) => {
-      await updateFeedbackStatus(id, 'resolved')
-      await deleteFeedback(id)
-    },
+    mutationFn: (id: string) => updateFeedbackStatus(id, 'resolved'),
     onSuccess: refresh,
   })
   const dismiss = useMutation({
-    mutationFn: async (id: string) => {
-      await updateFeedbackStatus(id, 'dismissed')
-      await deleteFeedback(id)
-    },
+    mutationFn: (id: string) => updateFeedbackStatus(id, 'dismissed'),
     onSuccess: refresh,
   })
+  const remove = useMutation({ mutationFn: deleteFeedback, onSuccess: refresh })
 
   return (
     <div style={{ display: 'grid', gap: 20 }} className="stagger">
@@ -68,7 +69,7 @@ export function FeedbackPage() {
 
       <div className="toolbar">
         <div className="toolbar-filters">
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 'auto' }}>
+          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); paged.setPage(1) }} style={{ width: 'auto' }}>
             <option value="all">All Statuses</option>
             <option value="pending">Pending</option>
             <option value="resolved">Resolved</option>
@@ -110,7 +111,7 @@ export function FeedbackPage() {
               </tr>
             </thead>
             <tbody>
-              {list.map((f) => {
+              {paged.rows.map((f) => {
                 return (
                   <tr key={f.id}>
                     <td><TypeBadge type={f.type} /></td>
@@ -125,22 +126,40 @@ export function FeedbackPage() {
                     </td>
                     <td>
                       <div className="action-group">
-                        <button
-                          className="btn btn-sm btn-success"
-                          title="Mark resolved"
-                          onClick={() => resolve.mutate(f.id)}
-                          style={{ gap: 4 }}
-                        >
-                          <CheckCircle size={12} /> Resolve
-                        </button>
-                        <button
-                          className="btn btn-sm btn-outline"
-                          title="Dismiss"
-                          onClick={() => dismiss.mutate(f.id)}
-                          style={{ gap: 4 }}
-                        >
-                          <XCircle size={12} /> Dismiss
-                        </button>
+                        {/* Resolve/Dismiss only while pending: a moderator may
+                            already have handled it in the app. */}
+                        {f.status === 'pending' ? (
+                          <>
+                            <button
+                              className="btn btn-sm btn-success"
+                              title="Mark resolved"
+                              disabled={resolve.isPending}
+                              onClick={() => resolve.mutate(f.id)}
+                              style={{ gap: 4 }}
+                            >
+                              <CheckCircle size={12} /> Resolve
+                            </button>
+                            <button
+                              className="btn btn-sm btn-outline"
+                              title="Dismiss"
+                              disabled={dismiss.isPending}
+                              onClick={() => dismiss.mutate(f.id)}
+                              style={{ gap: 4 }}
+                            >
+                              <XCircle size={12} /> Dismiss
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            className="btn btn-sm btn-danger"
+                            title="Delete this entry"
+                            disabled={remove.isPending}
+                            onClick={() => { if (confirm('Delete this feedback for good?')) remove.mutate(f.id) }}
+                            style={{ gap: 4 }}
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -150,6 +169,7 @@ export function FeedbackPage() {
           </table>
         </div>
       )}
+      {!isLoading && !isError && <Pager {...paged} />}
     </div>
   )
 }
