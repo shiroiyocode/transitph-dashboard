@@ -139,6 +139,7 @@ export function DashboardPage() {
     if (type === 'signup') return 'Signup'
     if (type === 'route') return 'Route'
     if (type === 'post') return 'Post'
+    if (type === 'appeal') return 'Appeal'
     return 'Report'
   }
 

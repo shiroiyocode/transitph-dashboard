@@ -1,6 +1,7 @@
 ﻿import React, { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deleteUser, getUsers, liftUserRestriction, restrictUser, setUserBanStatus, updateUserRole } from '@/lib/firestoreApi'
+import { banUser, deleteUser, getAppeals, getUsers, liftUserRestriction, restrictUser, updateUserRole } from '@/lib/firestoreApi'
+import { LOCKOUT_REASONS, reasonNeedsNote } from '@/lib/lockoutReasons'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ArrowUpDown, Search, Users } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
@@ -101,6 +102,51 @@ function getRestrictionDaysLabel(user: AppUser) {
   return `restricted (${daysLeft}d left)`
 }
 
+/**
+ * The reason picker and note shown in the Ban and Restrict dialogs. The
+ * rider sees both, so a ban or restriction can't go out without a reason.
+ */
+function ReasonFields({ reasonCode, note, onReason, onNote }: {
+  reasonCode: string; note: string; onReason: (code: string) => void; onNote: (note: string) => void
+}) {
+  return (
+    <>
+      <label style={{ color:'var(--text-secondary)', fontSize:'0.78rem', marginBottom:6, display:'block' }}>Reason (shown to the rider)</label>
+      <select value={reasonCode} onChange={(e) => onReason(e.target.value)} style={{ width:'100%', marginBottom:10 }}>
+        <option value="" disabled>Pick a reason</option>
+        {LOCKOUT_REASONS.map((r) => (
+          <option key={r.code} value={r.code}>{r.label}</option>
+        ))}
+      </select>
+      <textarea
+        value={note}
+        onChange={(e) => onNote(e.target.value)}
+        maxLength={500}
+        rows={3}
+        placeholder={reasonNeedsNote(reasonCode) ? 'Say what they did (required)' : 'Note to the rider (optional)'}
+        style={{ width:'100%', marginBottom:10 }}
+      />
+    </>
+  )
+}
+
+/** 1. A reason is picked. 2. "Other" has a note. 3. The confirm word is typed. */
+function reasonReady(reasonCode: string, note: string) {
+  return reasonCode !== '' && (!reasonNeedsNote(reasonCode) || note.trim() !== '')
+}
+
+function AppealBadge() {
+  return (
+    <span title="This rider sent an appeal. Decide it on Feedback & Reports." style={{
+      background: 'rgba(46,124,246,0.12)', color: '#2E7CF6', border: '1px solid rgba(46,124,246,0.2)',
+      display:'inline-flex', alignItems:'center', gap:5, padding:'3px 10px', borderRadius:99, fontSize:'0.72rem', fontWeight:700, whiteSpace:'nowrap',
+    }}>
+      <span style={{ width:5, height:5, borderRadius:'50%', background:'currentColor', flexShrink:0 }} />
+      appeal waiting
+    </span>
+  )
+}
+
 export function UsersPage() {
   const qc = useQueryClient()
   const { user: currentUser } = useAuth()
@@ -115,9 +161,21 @@ export function UsersPage() {
   const [restrictConfirmId, setRestrictConfirmId] = useState<string | null>(null)
   const [restrictTypedText, setRestrictTypedText] = useState('')
   const [restrictDays, setRestrictDays] = useState(7)
+  const [restrictReason, setRestrictReason] = useState('')
+  const [restrictNote, setRestrictNote] = useState('')
   const [banConfirmId, setBanConfirmId] = useState<string | null>(null)
   const [banTypedText, setBanTypedText] = useState('')
+  const [banReason, setBanReason] = useState('')
+  const [banNote, setBanNote] = useState('')
   const [mutationError, setMutationError] = useState<string | null>(null)
+  // Riders with an appeal still waiting, for the badge in the list.
+  const { data: appeals = [] } = useQuery({ queryKey: ['appeals'], queryFn: getAppeals })
+  const appealWaiting = useMemo(
+    () => new Set(appeals.filter((a) => a.status === 'pending').map((a) => a.userId)),
+    [appeals],
+  )
+  const closeRestrict = () => { setRestrictConfirmId(null); setRestrictTypedText(''); setRestrictDays(7); setRestrictReason(''); setRestrictNote('') }
+  const closeBan = () => { setBanConfirmId(null); setBanTypedText(''); setBanReason(''); setBanNote('') }
   const roleOptions: UserRole[] = ['user', 'moderator']
 
   const list = useMemo(() => data
@@ -135,6 +193,7 @@ export function UsersPage() {
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: ['users'] })
     await qc.invalidateQueries({ queryKey: ['moderators'] })
+    await qc.invalidateQueries({ queryKey: ['appeals'] })
   }
   const toErrorText = (prefix: string, err: unknown) => {
     const detail = err instanceof Error ? err.message : 'Unexpected error'
@@ -146,22 +205,24 @@ export function UsersPage() {
     onError: (err) => setMutationError(toErrorText('Failed to update user role', err)),
   })
   const restrict = useMutation({
-    mutationFn: ({ id, days }: { id: string; days: number }) => restrictUser(id, days),
+    mutationFn: ({ id, days, reasonCode, note }: { id: string; days: number; reasonCode: string; note: string }) =>
+      restrictUser(id, days, { reasonCode, note, byUid: currentUser?.uid }),
     onSuccess: async () => { setMutationError(null); await invalidate() },
     onError: (err) => setMutationError(toErrorText('Failed to restrict user', err)),
   })
   const liftRestriction = useMutation({
-    mutationFn: (id: string) => liftUserRestriction(id),
+    mutationFn: (id: string) => liftUserRestriction(id, currentUser?.uid),
     onSuccess: async () => { setMutationError(null); await invalidate() },
     onError: (err) => setMutationError(toErrorText('Failed to lift restriction', err)),
   })
   const ban = useMutation({
-    mutationFn: (id: string) => setUserBanStatus(id, true),
+    mutationFn: ({ id, reasonCode, note }: { id: string; reasonCode: string; note: string }) =>
+      banUser(id, { reasonCode, note, byUid: currentUser?.uid }),
     onSuccess: async () => { setMutationError(null); await invalidate() },
     onError: (err) => setMutationError(toErrorText('Failed to ban user', err)),
   })
   const unban = useMutation({
-    mutationFn: (id: string) => setUserBanStatus(id, false),
+    mutationFn: (id: string) => liftUserRestriction(id, currentUser?.uid),
     onSuccess: async () => { setMutationError(null); await invalidate() },
     onError: (err) => setMutationError(toErrorText('Failed to unban user', err)),
   })
@@ -311,7 +372,17 @@ export function UsersPage() {
                       </div>
                     </td>
                     <td style={{ color:'var(--text-secondary)', fontSize:'0.81rem' }}>{u.email}</td>
-                    <td><StatusBadge status={getRestrictionDaysLabel(u)} /></td>
+                    <td>
+                      <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                        <StatusBadge status={getRestrictionDaysLabel(u)} />
+                        {appealWaiting.has(u.id) && <AppealBadge />}
+                      </div>
+                      {u.lockout && (
+                        <div title={u.lockout.note || undefined} style={{ fontSize:'0.74rem', color:'var(--text-secondary)', marginTop:4, maxWidth:220 }}>
+                          {u.lockout.reasonLabel}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ color:'var(--text-secondary)', fontSize:'0.81rem' }}>{u.createdAt?.toDate().toLocaleDateString() ?? '-'}</td>
                     <td style={{ fontWeight:600 }}>{u.routesContributed ?? 0}</td>
                     <td>
@@ -352,7 +423,8 @@ export function UsersPage() {
                   </div>
                 </div>
                 <div style={{ color:'var(--text-secondary)', fontSize:'0.8rem' }}>{u.email}</div>
-                <div style={{ display:'flex', gap:6 }}><StatusBadge status={getRestrictionDaysLabel(u)} /></div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}><StatusBadge status={getRestrictionDaysLabel(u)} />{appealWaiting.has(u.id) && <AppealBadge />}</div>
+                {u.lockout && <div style={{ fontSize:'0.76rem', color:'var(--text-secondary)' }}>Reason: {u.lockout.reasonLabel}{u.lockout.note ? ` (${u.lockout.note})` : ''}</div>}
                 <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
                   {renderRoleControl(u, 110)}
                   {renderAdminAccessBtn(u)}
@@ -403,6 +475,12 @@ export function UsersPage() {
                 ['Achievements', (selectedUser.achievements ?? []).join(', ') || 'None'],
                 ['Streak Days', String(selectedUser.streakDays ?? 0)],
                 ['Contributions', String(selectedUser.contributionCount ?? 0)],
+                ...(selectedUser.lockout
+                  ? [[
+                      selectedUser.lockout.action === 'ban' ? 'Ban reason' : 'Restriction reason',
+                      `${selectedUser.lockout.reasonLabel}${selectedUser.lockout.note ? ` - ${selectedUser.lockout.note}` : ''}`,
+                    ]]
+                  : []),
               ]).map(([label, value]) => (
                 <div key={label} className="dialog-field">
                   <span className="dialog-field-label">{label}</span>
@@ -414,12 +492,14 @@ export function UsersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(restrictConfirmId)} onOpenChange={(open) => { if (!open) { setRestrictConfirmId(null); setRestrictTypedText(''); setRestrictDays(7) } }}>
+      <Dialog open={Boolean(restrictConfirmId)} onOpenChange={(open) => { if (!open) closeRestrict() }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Confirm Restriction</DialogTitle></DialogHeader>
           <p style={{ color:'var(--text-secondary)', fontSize:'0.85rem', marginBottom:12 }}>
-            Type <strong style={{ color:'#E05C6A' }}>RESTRICT</strong> to confirm a temporary restriction.
+            Pick a reason, then type <strong style={{ color:'#E05C6A' }}>RESTRICT</strong> to confirm a temporary restriction.
+            The rider sees the reason and your note, and can appeal once.
           </p>
+          <ReasonFields reasonCode={restrictReason} note={restrictNote} onReason={setRestrictReason} onNote={setRestrictNote} />
           <label style={{ color:'var(--text-secondary)', fontSize:'0.78rem', marginBottom:6, display:'block' }}>Restriction length</label>
           <select
             value={restrictDays}
@@ -437,21 +517,23 @@ export function UsersPage() {
             placeholder="Type RESTRICT to confirm"
           />
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:14 }}>
-            <Btn variant="outline" onClick={() => { setRestrictConfirmId(null); setRestrictTypedText(''); setRestrictDays(7) }}>Cancel</Btn>
-            <Btn variant="danger" disabled={restrictTypedText !== 'RESTRICT'} onClick={() => {
-              if (restrictConfirmId) restrict.mutate({ id: restrictConfirmId, days: restrictDays })
-              setRestrictConfirmId(null); setRestrictTypedText(''); setRestrictDays(7)
+            <Btn variant="outline" onClick={closeRestrict}>Cancel</Btn>
+            <Btn variant="danger" disabled={restrictTypedText !== 'RESTRICT' || !reasonReady(restrictReason, restrictNote)} onClick={() => {
+              if (restrictConfirmId) restrict.mutate({ id: restrictConfirmId, days: restrictDays, reasonCode: restrictReason, note: restrictNote })
+              closeRestrict()
             }}>Restrict User</Btn>
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(banConfirmId)} onOpenChange={(open) => { if (!open) { setBanConfirmId(null); setBanTypedText('') } }}>
+      <Dialog open={Boolean(banConfirmId)} onOpenChange={(open) => { if (!open) closeBan() }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Confirm Ban</DialogTitle></DialogHeader>
           <p style={{ color:'var(--text-secondary)', fontSize:'0.85rem', marginBottom:12 }}>
-            Type <strong style={{ color:'#E05C6A' }}>BAN</strong> to permanently ban this account.
+            Pick a reason, then type <strong style={{ color:'#E05C6A' }}>BAN</strong> to permanently ban this account.
+            The rider sees the reason and your note, and can appeal once.
           </p>
+          <ReasonFields reasonCode={banReason} note={banNote} onReason={setBanReason} onNote={setBanNote} />
           <input
             type="text"
             value={banTypedText}
@@ -459,10 +541,10 @@ export function UsersPage() {
             placeholder="Type BAN to confirm"
           />
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:14 }}>
-            <Btn variant="outline" onClick={() => { setBanConfirmId(null); setBanTypedText('') }}>Cancel</Btn>
-            <Btn variant="danger" disabled={banTypedText !== 'BAN'} onClick={() => {
-              if (banConfirmId) ban.mutate(banConfirmId)
-              setBanConfirmId(null); setBanTypedText('')
+            <Btn variant="outline" onClick={closeBan}>Cancel</Btn>
+            <Btn variant="danger" disabled={banTypedText !== 'BAN' || !reasonReady(banReason, banNote)} onClick={() => {
+              if (banConfirmId) ban.mutate({ id: banConfirmId, reasonCode: banReason, note: banNote })
+              closeBan()
             }}>Ban User</Btn>
           </div>
         </DialogContent>

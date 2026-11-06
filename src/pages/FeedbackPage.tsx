@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deleteFeedback, getFeedback, updateFeedbackStatus } from '@/lib/firestoreApi'
 import { Bell, CheckCircle, MessageSquare, XCircle } from 'lucide-react'
 import { RouteReportsSection } from '@/components/RouteReportsSection'
+import { AppealsSection } from '@/components/AppealsSection'
 
 function StatusBadge({ status }: { status?: string }) {
   if (status === 'resolved') return <span className="badge badge-approved"><span className="badge-dot" />Resolved</span>
@@ -49,7 +50,7 @@ export function FeedbackPage() {
       <div className="page-head">
         <div>
           <div className="page-head-title">Feedback & Reports</div>
-          <div className="page-head-subtitle">Track and resolve user feedback and content reports</div>
+          <div className="page-head-subtitle">Appeals, route reports and user feedback</div>
         </div>
         {pendingCount > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: 'var(--warning-soft)', border: '1px solid rgba(255,181,71,0.3)', borderRadius: 10 }}>
@@ -60,6 +61,8 @@ export function FeedbackPage() {
           </div>
         )}
       </div>
+
+      <AppealsSection />
 
       <RouteReportsSection />
 

@@ -18,14 +18,19 @@
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type QueryDocumentSnapshot,
   type DocumentData,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functionsClient } from '@/lib/firebase'
+import { lockoutReasonByCode, reasonNeedsNote } from '@/lib/lockoutReasons'
 import type {
   AnnouncementItem,
+  AppealItem,
+  AppealStatus,
   AppUser,
+  LockoutRecordItem,
   DashboardActivity,
   DashboardStats,
   FeedbackItem,
@@ -499,6 +504,7 @@ function buildDashboardStatsFromData(
   routes: RouteItem[],
   posts: PostItem[],
   feedbackDocs: QueryDocumentSnapshot<DocumentData>[],
+  appealDocs: QueryDocumentSnapshot<DocumentData>[] = [],
 ): DashboardStats {
   // Admins created from User Management still count as users.
 
@@ -569,7 +575,21 @@ function buildDashboardStatsFromData(
       }
     })
 
-  const recentActivity = [...recentUsers, ...recentRoutes, ...recentPosts, ...recentReports]
+  // Appeals still waiting for a decision: a locked-out rider is waiting.
+  const recentAppeals: DashboardActivity[] = appealDocs
+    .map(mapAppealDoc)
+    .filter((a) => a.status === 'pending')
+    .slice(0, 4)
+    .map((a) => ({
+      id: `a-${a.id}`,
+      type: 'appeal',
+      description: `${a.userName || a.userEmail || 'A rider'} appealed their ${a.action === 'ban' ? 'ban' : 'restriction'}`,
+      time: toRelativeTimeLabel(a.createdAt),
+      timestampMs: toTimestampMs(a.createdAt),
+      severity: 'warning' as const,
+    }))
+
+  const recentActivity = [...recentUsers, ...recentRoutes, ...recentPosts, ...recentReports, ...recentAppeals]
     .sort((a, b) => b.timestampMs - a.timestampMs)
     .slice(0, 12)
 
@@ -603,45 +623,185 @@ export async function getCurrentUserRole(uid: string): Promise<UserRole | null> 
 
 export async function getUsers(): Promise<AppUser[]> {
   const docs = await getDocsWithCreatedAtFallback(usersCol)
-  return docs.map(mapUserDoc)
+  const users = docs.map(mapUserDoc)
+  // Only banned and restricted riders have a reason worth loading, so this
+  // stays a handful of reads, not one per user.
+  await Promise.all(
+    users
+      .filter((u) => u.status === 'banned' || u.status === 'restricted')
+      .map(async (u) => {
+        u.lockout = await getLockoutRecord(u.id, u)
+      }),
+  )
+  return users
 }
 
 export async function updateUserRole(userId: string, role: UserRole) {
   await updateDoc(doc(db, 'users', userId), { role, updatedAt: serverTimestamp() })
 }
 
-export async function restrictUser(userId: string, days = MAX_RESTRICTION_DAYS) {
+// ── Bans, restrictions and appeals ───────────────────────────────────────────
+
+const appealsCol = collection(db, 'appeals')
+
+function lockoutRef(userId: string) {
+  return doc(db, 'users', userId, 'moderation', 'current')
+}
+
+/** Why a staff member is banning or restricting: shown to the rider. */
+export interface LockoutReasonInput {
+  reasonCode: string
+  note: string
+  byUid?: string
+}
+
+function newLockoutRecord(action: 'ban' | 'restrict', input: LockoutReasonInput, until: Timestamp | null) {
+  const reason = lockoutReasonByCode(input.reasonCode)
+  if (!reason) throw new Error('Pick a reason first.')
+  if (reasonNeedsNote(reason.code) && !input.note.trim()) {
+    throw new Error('Say what the rider did when the reason is "Other".')
+  }
+  return {
+    action,
+    reasonCode: reason.code,
+    reasonLabel: reason.label,
+    termsSection: reason.termsSection,
+    note: input.note.trim(),
+    by: input.byUid ?? null,
+    via: 'dashboard',
+    at: serverTimestamp(),
+    until,
+    // Changes with every ban or restriction, so each gets its own appeal.
+    lockoutId: Date.now().toString(36),
+  }
+}
+
+/**
+ * The reason record, but only when it belongs to the lockout the rider has
+ * now. A record left from an older restriction must not explain a ban made
+ * later without one.
+ */
+async function getLockoutRecord(userId: string, user: AppUser): Promise<LockoutRecordItem | undefined> {
+  try {
+    const snap = await getDoc(lockoutRef(userId))
+    if (!snap.exists()) return undefined
+    const data = snap.data()
+    const record: LockoutRecordItem = {
+      action: data.action === 'ban' ? 'ban' : 'restrict',
+      reasonCode: data.reasonCode ?? 'other',
+      reasonLabel: data.reasonLabel ?? '',
+      termsSection: data.termsSection ?? '',
+      note: data.note ?? '',
+      lockoutId: data.lockoutId ?? '',
+      at: normalizeTimestamp(data.at),
+      until: normalizeTimestamp(data.until),
+    }
+    if (user.status === 'banned') return record.action === 'ban' ? record : undefined
+    if (record.action === 'ban' || !record.until || !user.restrictedUntil) return undefined
+    const gapMs = Math.abs(record.until.toMillis() - user.restrictedUntil.toMillis())
+    return gapMs <= 5 * 60 * 1000 ? record : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Restricts a rider and saves why, in one write so neither goes without the other. */
+export async function restrictUser(userId: string, days: number, reason: LockoutReasonInput) {
   const boundedDays = Math.max(1, Math.min(MAX_RESTRICTION_DAYS, Math.floor(days)))
   const restrictedUntil = Timestamp.fromDate(
     new Date(Date.now() + boundedDays * 24 * 60 * 60 * 1000),
   )
 
-  await updateDoc(doc(db, 'users', userId), {
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'users', userId), {
     isBanned: false,
     status: 'restricted',
     restrictedAt: serverTimestamp(),
     restrictedUntil,
     updatedAt: serverTimestamp(),
   })
+  batch.set(lockoutRef(userId), newLockoutRecord('restrict', reason, restrictedUntil))
+  await batch.commit()
 }
 
-export async function setUserBanStatus(userId: string, isBanned: boolean) {
-  await updateDoc(doc(db, 'users', userId), {
-    isBanned,
-    status: isBanned ? 'banned' : 'active',
+/** Bans a rider for good and saves why. */
+export async function banUser(userId: string, reason: LockoutReasonInput) {
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'users', userId), {
+    isBanned: true,
+    status: 'banned',
     restrictedAt: null,
     restrictedUntil: null,
     updatedAt: serverTimestamp(),
   })
+  batch.set(lockoutRef(userId), newLockoutRecord('ban', reason, null))
+  await batch.commit()
 }
 
-export async function liftUserRestriction(userId: string) {
+/** Lifts a ban or restriction. A waiting appeal is closed as lifted. */
+export async function liftUserRestriction(userId: string, reviewerUid?: string) {
   await updateDoc(doc(db, 'users', userId), {
     isBanned: false,
     status: 'active',
     restrictedAt: null,
     restrictedUntil: null,
     updatedAt: serverTimestamp(),
+  })
+  await closePendingAppeals(userId, reviewerUid)
+}
+
+async function closePendingAppeals(userId: string, reviewerUid?: string) {
+  try {
+    const waiting = await getDocs(
+      query(appealsCol, where('userId', '==', userId), where('status', '==', 'pending')),
+    )
+    for (const d of waiting.docs) {
+      await updateDoc(d.ref, { status: 'lifted', reviewedBy: reviewerUid ?? null, reviewedAt: serverTimestamp() })
+    }
+  } catch (err) {
+    console.warn('[appeals] closing waiting appeals failed', err)
+  }
+}
+
+function mapAppealDoc(d: QueryDocumentSnapshot<DocumentData>): AppealItem {
+  const data = d.data()
+  const status: AppealStatus = data.status === 'lifted' || data.status === 'upheld' ? data.status : 'pending'
+  return {
+    id: d.id,
+    userId: data.userId ?? '',
+    userName: data.userName ?? '',
+    userEmail: data.userEmail ?? '',
+    action: data.action === 'ban' ? 'ban' : 'restrict',
+    reasonLabel: data.reasonLabel ?? '',
+    note: data.note ?? '',
+    message: data.message ?? '',
+    status,
+    reply: data.reply ?? '',
+    createdAt: normalizeTimestamp(data.createdAt),
+    reviewedAt: normalizeTimestamp(data.reviewedAt),
+  }
+}
+
+/** Every appeal: waiting ones first, then newest first. */
+export async function getAppeals(): Promise<AppealItem[]> {
+  const snap = await getDocs(appealsCol)
+  return snap.docs.map(mapAppealDoc).sort((a, b) => {
+    if ((a.status === 'pending') !== (b.status === 'pending')) return a.status === 'pending' ? -1 : 1
+    return (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)
+  })
+}
+
+/**
+ * Lifts the lockout or keeps it ("uphold"). Either way the rider sees the
+ * outcome, and the reply when it's kept, next time they open the app.
+ */
+export async function decideAppeal(appeal: AppealItem, lift: boolean, reply: string, reviewerUid?: string) {
+  if (lift) await liftUserRestriction(appeal.userId, reviewerUid)
+  await updateDoc(doc(db, 'appeals', appeal.id), {
+    status: lift ? 'lifted' : 'upheld',
+    reply: reply.trim(),
+    reviewedBy: reviewerUid ?? null,
+    reviewedAt: serverTimestamp(),
   })
 }
 
@@ -923,7 +1083,10 @@ export async function deleteAnnouncement(id: string) {
 export async function getDashboardStats(): Promise<DashboardStats> {
   const [users, routes, posts] = await Promise.all([getUsers(), getRoutes(), getPosts()])
   const feedbackDocs = await getDocsWithCreatedAtFallback(feedbackCol)
-  return buildDashboardStatsFromData(users, routes, posts, feedbackDocs)
+  // Appeals are extra: if they can't load (rules not deployed yet), the
+  // rest of the dashboard still shows.
+  const appealDocs = await getDocs(appealsCol).then((s) => s.docs).catch(() => [])
+  return buildDashboardStatsFromData(users, routes, posts, feedbackDocs, appealDocs)
 }
 
 export function subscribeDashboardStats(
@@ -934,16 +1097,27 @@ export function subscribeDashboardStats(
   let routes: RouteItem[] = []
   let posts: PostItem[] = []
   let feedbackDocs: QueryDocumentSnapshot<DocumentData>[] = []
+  let appealDocs: QueryDocumentSnapshot<DocumentData>[] = []
 
   let usersReady = false
   let routesReady = false
   let postsReady = false
   let feedbackReady = false
 
+  // Appeals don't hold the dashboard back: they join the feed when they load.
   const emitIfReady = () => {
     if (!usersReady || !routesReady || !postsReady || !feedbackReady) return
-    onData(buildDashboardStatsFromData(users, routes, posts, feedbackDocs))
+    onData(buildDashboardStatsFromData(users, routes, posts, feedbackDocs, appealDocs))
   }
+
+  const unsubAppeals = onSnapshot(
+    appealsCol,
+    (snap) => {
+      appealDocs = snap.docs
+      emitIfReady()
+    },
+    (err) => console.warn('[dashboard] appeals stream failed', err),
+  )
 
   const handleError = (err: unknown) => {
     onError?.(err instanceof Error ? err : new Error('Failed to stream dashboard data'))
@@ -990,6 +1164,7 @@ export function subscribeDashboardStats(
   )
 
   return () => {
+    unsubAppeals()
     unsubUsers()
     unsubRoutes()
     unsubPosts()

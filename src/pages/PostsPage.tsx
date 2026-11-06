@@ -275,6 +275,29 @@ export function PostsPage() {
                   <span className="dialog-field-value">{value}</span>
                 </div>
               ))}
+              {/* Why riders reported it, so staff can judge without leaving the dialog. */}
+              {(() => {
+                const reports = feedback.filter((f) => f.type === 'report' && f.postId === preview.id)
+                return (
+                  <div className="dialog-field" style={{ alignItems: 'flex-start' }}>
+                    <span className="dialog-field-label">Reports ({reports.length})</span>
+                    <span className="dialog-field-value">
+                      {reports.length === 0 ? 'No reports' : (
+                        <ul style={{ margin: 0, paddingLeft: 16, display: 'grid', gap: 4 }}>
+                          {reports.map((r) => (
+                            <li key={r.id}>
+                              <span style={{ color: 'var(--danger)', fontWeight: 600 }}>{r.reason || r.message || 'No reason given'}</span>
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                                {' '}· {r.createdAt?.toDate().toLocaleString() ?? 'date unknown'}{r.status !== 'pending' ? ` · ${r.status}` : ''}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </span>
+                  </div>
+                )
+              })()}
             </div>
           )}
         </DialogContent>

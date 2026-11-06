@@ -14,6 +14,8 @@ export interface AppUser {
   role: UserRole
   status: UserStatus
   restrictedUntil?: Timestamp
+  /** Why they're banned or restricted, when staff gave a reason. */
+  lockout?: LockoutRecordItem
   createdAt?: Timestamp
   routesContributed: number
   badges?: string[]
@@ -117,6 +119,36 @@ export interface FeedbackItem {
   userId?: string
 }
 
+/** users/{uid}/moderation/current: why a rider is banned or restricted. */
+export interface LockoutRecordItem {
+  action: 'ban' | 'restrict'
+  reasonCode: string
+  reasonLabel: string
+  termsSection: string
+  note: string
+  lockoutId: string
+  at?: Timestamp
+  until?: Timestamp
+}
+
+export type AppealStatus = 'pending' | 'lifted' | 'upheld'
+
+/** appeals/{uid}_{lockoutId}: a rider asking to undo a ban or restriction. */
+export interface AppealItem {
+  id: string
+  userId: string
+  userName: string
+  userEmail: string
+  action: 'ban' | 'restrict'
+  reasonLabel: string
+  note: string
+  message: string
+  status: AppealStatus
+  reply: string
+  createdAt?: Timestamp
+  reviewedAt?: Timestamp
+}
+
 export interface AnnouncementItem {
   id: string
   title: string
@@ -142,7 +174,7 @@ export interface DashboardStats {
   recentActivity: DashboardActivity[]
 }
 
-export type DashboardActivityType = 'signup' | 'route' | 'post' | 'report'
+export type DashboardActivityType = 'signup' | 'route' | 'post' | 'report' | 'appeal'
 export type DashboardActivitySeverity = 'info' | 'warning' | 'critical'
 
 export interface DashboardActivity {
