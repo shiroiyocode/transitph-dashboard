@@ -22,7 +22,7 @@ function showsFor(item: RouteReportItem) {
 }
 
 /** Commuters' route reports: each shows on every route on its road for a day.
- * Keep holds one until removed; Remove takes it down now. */
+ * Keep holds one until removed. Remove takes it down now. */
 export function RouteReportsSection() {
   const qc = useQueryClient()
   const { data = [], isLoading, isError } = useQuery({ queryKey: ['route-reports'], queryFn: getRouteReports })

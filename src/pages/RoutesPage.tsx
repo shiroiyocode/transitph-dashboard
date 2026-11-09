@@ -161,7 +161,7 @@ function estimateEtaMinutes(route: RouteItem) {
   return minutes > 0 ? Math.max(1, Math.round(minutes)) : 0
 }
 
-/** The app sometimes saves "0" for ETA; fall back to an estimate when it did. */
+/** The app sometimes saves "0" for ETA. Fall back to an estimate when it did. */
 function formatEta(route: RouteItem) {
   if (route.eta && parseFloat(route.eta) > 0) return `${route.eta} mins`
   const estimate = estimateEtaMinutes(route)
@@ -181,7 +181,7 @@ function pathLengthMeters(points: RouteItem['pathPoints']) {
   return total
 }
 
-/** Saved distance strings are mixed ("3.2 mi", "5.1 km"); read one as meters. */
+/** Saved distance strings are mixed ("3.2 mi", "5.1 km"). Read one as meters. */
 function savedDistanceMeters(distance?: string) {
   const match = distance?.match(/([\d.,]+)\s*(km|mi|m)?/i)
   const value = match ? parseFloat(match[1].replace(/,/g, '')) : NaN
@@ -233,7 +233,7 @@ export function RoutesPage() {
     () => list.filter((r) => selectedIds.includes(r.id)),
     [list, selectedIds],
   )
-  // Approve and Reject apply to the ones not approved yet; Delete to all.
+  // Approve and Reject apply to the ones not approved yet. Delete to all.
   const reviewable = selectedRoutes.filter((r) => r.status !== 'approved')
   const [bulkBusy, setBulkBusy] = useState(false)
 

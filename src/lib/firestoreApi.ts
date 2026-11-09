@@ -334,7 +334,7 @@ function mapRouteDoc(d: QueryDocumentSnapshot<DocumentData>): RouteItem {
   }
 }
 
-/** `[{lat, lng, name?}]` as saved by the app; anything else is skipped. */
+/** `[{lat, lng, name?}]` as saved by the app. Anything else is skipped. */
 function toLatLngs(value: unknown): RouteStopItem[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((p: unknown) => {
@@ -640,7 +640,7 @@ export async function updateUserRole(userId: string, role: UserRole) {
   await updateDoc(doc(db, 'users', userId), { role, updatedAt: serverTimestamp() })
 }
 
-// ── Bans, restrictions and appeals ───────────────────────────────────────────
+// Bans, restrictions and appeals
 
 const appealsCol = collection(db, 'appeals')
 
@@ -929,7 +929,7 @@ export async function updateRouteStatus(routeId: string, status: 'approved' | 'r
       try {
         await notifyRouteReviewed(routeId, contributorUid, routeSnap.data(), 'rejected')
       } catch (error) {
-        // The rejection itself succeeded; a failed notification must not undo it.
+        // The rejection itself succeeded. A failed notification must not undo it.
         console.error(`Route ${routeId} rejected but notification failed`, error)
       }
     }
@@ -960,7 +960,7 @@ export async function updateRouteStatus(routeId: string, status: 'approved' | 'r
     try {
       await notifyRouteReviewed(routeId, contributorUid, routeSnap.data(), 'approved')
     } catch (error) {
-      // The approval itself succeeded; a failed notification must not undo it.
+      // The approval itself succeeded. A failed notification must not undo it.
       console.error(`Route ${routeId} approved but notification failed`, error)
     }
   }
@@ -1184,7 +1184,7 @@ export async function getModeratorStats() {
   const [routeApprovedSnap, auditLogDocs] = await Promise.all([
     getDocs(query(routesCol, where('approvalStatus', '==', 'approved'))),
     // Without the auditLogs collection-group rule deployed this read is
-    // denied; fall back to dashboard approvals only rather than fail the page.
+    // denied. Fall back to dashboard approvals only rather than fail the page.
     getDocs(collectionGroup(db, 'auditLogs')).then((s) => s.docs).catch((error) => {
       console.error('Could not read route audit logs', error)
       return [] as QueryDocumentSnapshot<DocumentData>[]
@@ -1192,7 +1192,7 @@ export async function getModeratorStats() {
   ])
 
   // Approvals per moderator, as sets of routes so one approval logged twice
-  // counts once. The dashboard stamps reviewedBy on the route; the app leaves
+  // counts once. The dashboard stamps reviewedBy on the route. The app leaves
   // it out and logs moderator_approved / correction_merged instead (a merged
   // correction's own doc is deleted, so the log is all that's left of it).
   const approvedRoutesByModerator = new Map<string, Set<string>>()

@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
-/* ── TOKENS ──────────────────────────────────────────────────────────────── */
+/* Tokens */
 :root {
   --background: #F4F8FF;
   --surface: #FFFFFF;
@@ -34,7 +34,7 @@
   --sidebar-width: 268px;
 }
 
-/* ── RESET & BASE ─────────────────────────────────────────────────────────── */
+/* Reset & base */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { scroll-behavior: smooth; }
@@ -60,20 +60,20 @@ h1, h2, h3, h4, h5, h6 {
 
 a { color: inherit; text-decoration: none; }
 
-/* ── SCROLLBAR ────────────────────────────────────────────────────────────── */
+/* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-/* ── LAYOUT ───────────────────────────────────────────────────────────────── */
+/* Layout */
 .layout {
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
   min-height: 100vh;
 }
 
-/* ── SIDEBAR ──────────────────────────────────────────────────────────────── */
+/* Sidebar */
 .sidebar {
   background: var(--surface);
   border-right: 1px solid var(--border-soft);
@@ -134,7 +134,7 @@ a { color: inherit; text-decoration: none; }
   margin-top: 1px;
 }
 
-/* ── PROFILE CARD ─────────────────────────────────────────────────────────── */
+/* Profile card */
 .profile-card {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
@@ -185,7 +185,7 @@ a { color: inherit; text-decoration: none; }
   margin-top: 2px;
 }
 
-/* ── NAV SECTION ──────────────────────────────────────────────────────────── */
+/* Nav section */
 .nav-section-label {
   font-size: 0.68rem;
   font-weight: 700;
@@ -261,7 +261,7 @@ a { color: inherit; text-decoration: none; }
   border-top: 1px solid var(--border-soft);
 }
 
-/* ── MAIN CONTENT ─────────────────────────────────────────────────────────── */
+/* Main content */
 .main {
   padding: 20px;
   overflow-x: hidden;
@@ -277,7 +277,7 @@ a { color: inherit; text-decoration: none; }
   min-height: calc(100vh - 40px);
 }
 
-/* ── PAGE HEADER ──────────────────────────────────────────────────────────── */
+/* Page header */
 .page-head {
   display: flex;
   align-items: center;
@@ -300,7 +300,7 @@ a { color: inherit; text-decoration: none; }
   font-weight: 500;
 }
 
-/* ── STAT CARDS ───────────────────────────────────────────────────────────── */
+/* Stat cards */
 .grid-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -365,7 +365,7 @@ a { color: inherit; text-decoration: none; }
 .stat-meta.up { color: var(--success); }
 .stat-meta.down { color: var(--danger); }
 
-/* ── CARD ─────────────────────────────────────────────────────────────────── */
+/* Card */
 .card, [class*="card"] {
   background: var(--surface);
   border: 1px solid var(--border-soft);
@@ -374,7 +374,7 @@ a { color: inherit; text-decoration: none; }
   box-shadow: var(--shadow-xs);
 }
 
-/* ── TOOLBAR ──────────────────────────────────────────────────────────────── */
+/* Toolbar */
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -423,7 +423,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--text-primary);
 }
 
-/* ── TABLE ────────────────────────────────────────────────────────────────── */
+/* Table */
 .table-wrap {
   overflow-x: auto;
   border-radius: var(--radius-md);
@@ -476,7 +476,7 @@ tbody td {
   vertical-align: middle;
 }
 
-/* ── BADGES & STATUS ──────────────────────────────────────────────────────── */
+/* Badges & status */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -505,7 +505,7 @@ tbody td {
 .badge-superadmin { color: var(--accent); background: var(--accent-soft); }
 .badge-user { color: var(--text-secondary); background: rgba(122, 146, 178, 0.12); }
 
-/* ── USER AVATAR CELL ─────────────────────────────────────────────────────── */
+/* User avatar cell */
 .user-cell {
   display: flex !important;
   align-items: center !important;
@@ -550,7 +550,7 @@ tbody td {
 
 .user-name-link:hover { color: #1a6ae0 !important; text-decoration: underline !important; }
 
-/* ── BUTTONS ──────────────────────────────────────────────────────────────── */
+/* Buttons */
 button.btn,
 a.btn {
   display: inline-flex !important;
@@ -575,7 +575,7 @@ a.btn {
 button.btn:disabled,
 a.btn:disabled { opacity: 0.45 !important; cursor: not-allowed !important; pointer-events: none !important; }
 
-/* Primary — blue gradient */
+/* Primary: blue gradient */
 button.btn.btn-primary,
 a.btn.btn-primary {
   background: linear-gradient(135deg, #4A7CE0 0%, #6A9EFF 100%) !important;
@@ -589,7 +589,7 @@ a.btn.btn-primary:hover:not(:disabled) {
   transform: translateY(-1px) !important;
 }
 
-/* Outline — bordered */
+/* Outline: bordered */
 button.btn.btn-outline,
 a.btn.btn-outline {
   background: #fff !important;
@@ -603,7 +603,7 @@ a.btn.btn-outline:hover:not(:disabled) {
   color: #2E7CF6 !important;
 }
 
-/* Danger — red soft */
+/* Danger: red soft */
 button.btn.btn-danger,
 a.btn.btn-danger {
   background: rgba(224,92,106,0.10) !important;
@@ -617,7 +617,7 @@ a.btn.btn-danger:hover:not(:disabled) {
   border-color: transparent !important;
 }
 
-/* Success — green soft */
+/* Success: green soft */
 button.btn.btn-success,
 a.btn.btn-success {
   background: rgba(62,201,122,0.10) !important;
@@ -656,7 +656,7 @@ a.btn.btn-icon {
   flex-wrap: nowrap !important;
 }
 
-/* ── INPUTS ───────────────────────────────────────────────────────────────── */
+/* Inputs */
 input[type="text"], input[type="email"], input[type="password"], input[type="search"],
 input[type="datetime-local"], textarea, select {
   width: 100%;
@@ -709,7 +709,7 @@ label {
 
 .form-grid-2 { grid-template-columns: 1fr 1fr; }
 
-/* ── CHART CARDS ──────────────────────────────────────────────────────────── */
+/* Chart cards */
 .chart-card {
   background: var(--surface);
   border: 1px solid var(--border-soft);
@@ -731,7 +731,7 @@ label {
   margin-bottom: 16px;
 }
 
-/* ── ACTIVITY FEED ────────────────────────────────────────────────────────── */
+/* Activity feed */
 .activity-item {
   display: flex;
   align-items: flex-start;
@@ -763,7 +763,7 @@ label {
   white-space: nowrap;
 }
 
-/* ── PAGINATION ───────────────────────────────────────────────────────────── */
+/* Pagination */
 .pagination {
   display: flex;
   align-items: center;
@@ -812,7 +812,7 @@ label {
   text-align: center;
 }
 
-/* ── EMPTY STATE ──────────────────────────────────────────────────────────── */
+/* Empty state */
 .empty-state {
   text-align: center;
   padding: 48px 24px;
@@ -845,7 +845,7 @@ label {
   max-width: 280px;
 }
 
-/* ── STATE BANNERS ────────────────────────────────────────────────────────── */
+/* State banners */
 .state-banner {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
@@ -864,7 +864,7 @@ label {
   color: #a8304a;
 }
 
-/* ── LOADING ──────────────────────────────────────────────────────────────── */
+/* Loading */
 .loading-row td { padding: 0; }
 
 .skeleton {
@@ -880,7 +880,7 @@ label {
   100% { background-position: -200% 0; }
 }
 
-/* ── DIALOG ───────────────────────────────────────────────────────────────── */
+/* Dialog */
 [role="dialog"], .dialog-overlay {
   animation: dialog-enter 0.2s ease;
 }
@@ -914,7 +914,7 @@ label {
   font-weight: 500;
 }
 
-/* ── LOGIN PAGE ───────────────────────────────────────────────────────────── */
+/* Login page */
 .login-page {
   min-height: 100vh;
   display: grid;
@@ -969,7 +969,7 @@ label {
   margin-top: 2px;
 }
 
-/* ── MOBILE CARDS ─────────────────────────────────────────────────────────── */
+/* Mobile cards */
 .mobile-cards { display: none; gap: 10px; flex-direction: column; }
 
 .mobile-user-card {
@@ -982,7 +982,7 @@ label {
   box-shadow: var(--shadow-xs);
 }
 
-/* ── SECTION DIVIDER ──────────────────────────────────────────────────────── */
+/* Section divider */
 .section-divider {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -1000,7 +1000,7 @@ label {
   background: var(--border-soft);
 }
 
-/* ── SWITCH ───────────────────────────────────────────────────────────────── */
+/* Switch */
 .switch-label {
   display: flex;
   align-items: center;
@@ -1011,7 +1011,7 @@ label {
   color: var(--text-primary);
 }
 
-/* ── ANNOUNCEMENT CARD ────────────────────────────────────────────────────── */
+/* Announcement card */
 .announcement-type-badge {
   padding: 3px 9px;
   border-radius: 6px;
@@ -1024,14 +1024,14 @@ label {
 .type-warning { background: var(--warning-soft); color: #c27a00; }
 .type-critical { background: var(--danger-soft); color: var(--danger); }
 
-/* ── CHART GRID ───────────────────────────────────────────────────────────── */
+/* Chart grid */
 .chart-grid {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 }
 
-/* ── ROUTE STEP ───────────────────────────────────────────────────────────── */
+/* Route step */
 .route-step {
   display: flex;
   align-items: center;
@@ -1052,7 +1052,7 @@ label {
   flex-shrink: 0;
 }
 
-/* ── SETTINGS ─────────────────────────────────────────────────────────────── */
+/* Settings */
 .settings-section {
   background: var(--surface);
   border: 1px solid var(--border-soft);
@@ -1071,7 +1071,7 @@ label {
   border-bottom: 1px solid var(--border-soft);
 }
 
-/* ── ANIMATIONS ───────────────────────────────────────────────────────────── */
+/* Animations */
 @keyframes page-enter {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1092,7 +1092,7 @@ label {
 .stagger > *:nth-child(4) { animation-delay: 150ms; }
 .stagger > *:nth-child(5) { animation-delay: 200ms; }
 
-/* ── RESPONSIVE ───────────────────────────────────────────────────────────── */
+/* Responsive */
 @media (max-width: 1024px) {
   :root { --sidebar-width: 1fr; }
 

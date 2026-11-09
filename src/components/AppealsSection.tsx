@@ -15,7 +15,7 @@ function StatusBadge({ status }: { status: AppealItem['status'] }) {
 }
 
 /**
- * Commuters' appeals against a ban or restriction. Lift lets them back in;
+ * Commuters' appeals against a ban or restriction. Lift lets them back in.
  * Uphold keeps the decision and sends an optional reply they see the next
  * time they open the app.
  */

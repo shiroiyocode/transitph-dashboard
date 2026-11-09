@@ -32,7 +32,7 @@ function write(state: GuardState) {
   }
 }
 
-/** Milliseconds until sign-in is allowed again; 0 when it is allowed now. */
+/** Milliseconds until sign-in is allowed again. 0 when it is allowed now. */
 export function getLockoutRemainingMs() {
   const { lockedUntil } = read()
   return Math.max(0, lockedUntil - Date.now())

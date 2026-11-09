@@ -95,7 +95,7 @@ export interface PostItem {
   createdAt?: Timestamp
 }
 
-/** A commuter's report on a route; shows on every route on the same road for a
+/** A commuter's report on a route. Shows on every route on the same road for a
  * day, or until removed when kept. */
 export interface RouteReportItem {
   id: string
