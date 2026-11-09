@@ -58,6 +58,12 @@ export interface RouteItem {
   /** The drawn line, and where each step ends on it (indexes). */
   pathPoints?: LatLngItem[]
   stepBoundaries?: number[]
+  /** The latest thing that happened to it, like the reasons it was rejected. */
+  latestDecision?: {
+    decision: string
+    reasonCodes: string[]
+    note?: string
+  }
 }
 
 export interface LatLngItem {

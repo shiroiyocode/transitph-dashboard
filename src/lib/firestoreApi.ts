@@ -13,7 +13,6 @@
   onSnapshot,
   orderBy,
   query,
-  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -25,6 +24,9 @@
 import { httpsCallable } from 'firebase/functions'
 import { db, functionsClient } from '@/lib/firebase'
 import { lockoutReasonByCode, reasonNeedsNote } from '@/lib/lockoutReasons'
+import { rejectionReasonLabel } from '@/lib/routeRejectionReasons'
+import { mapRouteRows } from '@/lib/routeRows'
+import { callRoutesApi, RoutesApiError } from '@/lib/routesApi'
 import type {
   AnnouncementItem,
   AppealItem,
@@ -37,12 +39,13 @@ import type {
   PostItem,
   RouteItem,
   RouteReportItem,
-  RouteStopItem,
   UserRole,
 } from '@/types/models'
 
 const usersCol = collection(db, 'users')
+// Only for approval history from before the move to Supabase.
 const routesCol = collection(db, 'routes')
+const ROUTES_REFRESH_MS = 60_000
 const postsCol = collection(db, 'posts')
 const feedbackCol = collection(db, 'feedbacks')
 const announcementsCol = collection(db, 'announcements')
@@ -274,114 +277,10 @@ function mapUserDoc(d: QueryDocumentSnapshot<DocumentData>): AppUser {
   } as AppUser
 }
 
-function mapRouteDoc(d: QueryDocumentSnapshot<DocumentData>): RouteItem {
-  const data = d.data()
-  const feedbackSummaryRaw = data.feedbackSummary as Record<string, unknown> | undefined
-  return {
-    id: d.id,
-    startLocation: data.startLocation ?? data.from ?? 'Unknown',
-    endLocation: data.endLocation ?? data.to ?? 'Unknown',
-    contributorId: data.contributorId ?? data.userId ?? '',
-    contributorName: data.contributorName ?? data.userName,
-    contributorEmail: data.contributorEmail ?? data.userEmail ?? data.email,
-    createdAt: normalizeTimestamp(data.createdAt ?? data.timestamp),
-    updatedAt: normalizeTimestamp(data.updatedAt),
-    editedAt: normalizeTimestamp(data.editedAt),
-    status: data.approvalStatus ?? data.status ?? 'pending',
-    isEdited: Boolean(data.isEdited ?? false),
-    editCount: Number(data.editCount ?? 0),
-    views: data.views ?? 0,
-    upvotes: data.upvotes ?? 0,
-    downvotes: data.downvotes ?? 0,
-    feedbackSummary: feedbackSummaryRaw
-      ? {
-          fareAccurateYes: Number(feedbackSummaryRaw.fareAccurateYes ?? 0),
-          fareAccurateNo: Number(feedbackSummaryRaw.fareAccurateNo ?? 0),
-          scheduleAccurateYes: Number(feedbackSummaryRaw.scheduleAccurateYes ?? 0),
-          scheduleAccurateNo: Number(feedbackSummaryRaw.scheduleAccurateNo ?? 0),
-          stillOperatingYes: Number(feedbackSummaryRaw.stillOperatingYes ?? 0),
-          stillOperatingNo: Number(feedbackSummaryRaw.stillOperatingNo ?? 0),
-        }
-      : undefined,
-    steps: Array.isArray(data.steps)
-      ? data.steps.map((s: Record<string, unknown>) => ({
-          mode: typeof s?.mode === 'string' ? s.mode : 'Unknown',
-          instruction: typeof s?.instruction === 'string' ? s.instruction : '',
-          details: typeof s?.details === 'string' ? s.details : undefined,
-          actualFare: typeof s?.actualFare === 'number' ? s.actualFare : undefined,
-          // Like the app: trains, and steps set to designated stops.
-          stops:
-            s?.mode === 'Train' || s?.boarding === 'designated' ? toLatLngs(s?.stops) : undefined,
-        }))
-      : [],
-    pathPoints: toLatLngs(data.pathPoints),
-    stepBoundaries: Array.isArray(data.stepBoundaries)
-      ? data.stepBoundaries.filter((b: unknown): b is number => typeof b === 'number')
-      : [],
-    transportModes: Array.isArray(data.steps)
-      ? Array.from(
-          new Set(
-            data.steps
-              .map((s: Record<string, unknown>) => s?.mode)
-              .filter((m: unknown): m is string => typeof m === 'string'),
-          ),
-        )
-      : [],
-    eta: typeof data.eta === 'string' ? data.eta : undefined,
-    price: typeof data.price === 'string' ? data.price : undefined,
-    distance: typeof data.distance === 'string' ? data.distance : undefined,
-    distanceMeters: typeof data.distanceMeters === 'number' ? data.distanceMeters : undefined,
-  }
-}
-
-/** `[{lat, lng, name?}]` as saved by the app. Anything else is skipped. */
-function toLatLngs(value: unknown): RouteStopItem[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((p: unknown) => {
-    const point = p as Record<string, unknown> | null
-    if (typeof point?.lat !== 'number' || typeof point?.lng !== 'number') return []
-    return [{ lat: point.lat, lng: point.lng, name: typeof point.name === 'string' ? point.name : undefined }]
-  })
-}
-
 function toNonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const normalized = value.trim()
   return normalized.length > 0 ? normalized : null
-}
-
-function getRouteContributorIdentifier(data: DocumentData): string | null {
-  const identifiers = [
-    data.contributorId,
-    data.userId,
-    data.contributorEmail,
-    data.userEmail,
-    data.email,
-  ]
-
-  for (const candidate of identifiers) {
-    const normalized = toNonEmptyString(candidate)
-    if (normalized) return normalized
-  }
-
-  return null
-}
-
-async function resolveContributorUid(contributorIdentifier: string | null): Promise<string | null> {
-  if (!contributorIdentifier) return null
-  if (!contributorIdentifier.includes('@')) return contributorIdentifier
-
-  try {
-    const usersByEmail = await getDocs(
-      query(usersCol, where('email', '==', contributorIdentifier), limit(1)),
-    )
-    if (usersByEmail.empty) return null
-
-    const firstMatch = usersByEmail.docs[0]
-    return toNonEmptyString(firstMatch.data().uid) ?? firstMatch.id
-  } catch {
-    return null
-  }
 }
 
 async function incrementApprovedContributionStats(contributorUid: string) {
@@ -825,9 +724,14 @@ export async function deleteUser(userId: string) {
   }
 }
 
+/** Routes live in Supabase. Every status comes through the staff-only server action. */
+async function fetchRouteRows(): Promise<RouteItem[]> {
+  return mapRouteRows(await callRoutesApi<Record<string, unknown>[]>('staff_list'))
+}
+
 export async function getRoutes(): Promise<RouteItem[]> {
-  const [routeDocs, userDocs] = await Promise.all([
-    getDocsWithCreatedAtFallback(routesCol),
+  const [routes, userDocs] = await Promise.all([
+    fetchRouteRows(),
     getDocsWithCreatedAtFallback(usersCol),
   ])
 
@@ -844,8 +748,7 @@ export async function getRoutes(): Promise<RouteItem[]> {
     })
   })
 
-  return routeDocs.map((docSnap) => {
-    const route = mapRouteDoc(docSnap)
+  return routes.map((route) => {
     const lookup = route.contributorId ? contributorLookup.get(route.contributorId) : undefined
     return {
       ...route,
@@ -864,16 +767,12 @@ export async function getRoutes(): Promise<RouteItem[]> {
 async function notifyRouteReviewed(
   routeId: string,
   contributorUid: string,
-  routeData: DocumentData,
   status: 'approved' | 'rejected',
+  message: string,
 ) {
   const userSnap = await getDoc(doc(db, 'users', contributorUid))
   const preferences = userSnap.data()?.preferences
   if (preferences && preferences.routeApprovalUpdates === false) return
-
-  const start = toNonEmptyString(routeData.startLocation)
-  const end = toNonEmptyString(routeData.endLocation)
-  const routeTitle = start && end ? `${start} to ${end}` : 'your submitted route'
 
   // Auto IDs: bulk review runs in parallel, so time-based IDs could collide.
   const notificationRef = doc(collection(db, 'notifications'))
@@ -887,87 +786,72 @@ async function notifyRouteReviewed(
     fromUserId: null,
     fromUserName: null,
     timestamp: serverTimestamp(),
-    message:
-      status === 'approved'
-        ? `Your submitted route (${routeTitle}) was approved and is now live.`
-        : `Your submitted route (${routeTitle}) was rejected by moderators.`,
+    message,
     isRead: false,
   })
 }
 
-function currentRouteStatus(data: DocumentData): string {
-  return toNonEmptyString(data.approvalStatus) ?? toNonEmptyString(data.status) ?? 'pending'
+type RouteDecisionResult = {
+  contributorId: string | null
+  title: string
+  mergedInto?: string
 }
 
-export async function updateRouteStatus(routeId: string, status: 'approved' | 'rejected', reviewerUid: string) {
-  const routeRef = doc(db, 'routes', routeId)
-
-  const routeSnap = await getDoc(routeRef)
-  if (!routeSnap.exists()) {
-    throw new Error(`Route ${routeId} not found`)
+/**
+ * Sends a decision. Returns null when someone already decided, or removed the
+ * route. That's two people acting at once, so it isn't an error, and the
+ * contributor shouldn't be told twice.
+ */
+async function decideRoute(body: object): Promise<RouteDecisionResult | null> {
+  try {
+    return await callRoutesApi<RouteDecisionResult>('decide', body)
+  } catch (error) {
+    if (error instanceof RoutesApiError && (error.code === 'conflict' || error.code === 'not_found')) return null
+    throw error
   }
+}
 
-  const contributorIdentifier = getRouteContributorIdentifier(routeSnap.data())
-  const contributorUid = await resolveContributorUid(contributorIdentifier)
+export async function approveRoute(routeId: string) {
+  const result = await decideRoute({ routeId, decision: 'approve' })
+  if (!result?.contributorId) return
 
-  if (status === 'rejected') {
-    const wasAlreadyRejected = await runTransaction(db, async (transaction) => {
-      const latestRouteSnap = await transaction.get(routeRef)
-      if (!latestRouteSnap.exists()) {
-        throw new Error(`Route ${routeId} not found`)
-      }
-      transaction.update(routeRef, {
-        approvalStatus: status,
-        reviewedBy: reviewerUid,
-        reviewedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
-      return currentRouteStatus(latestRouteSnap.data()) === 'rejected'
-    })
-
-    if (!wasAlreadyRejected && contributorUid) {
-      try {
-        await notifyRouteReviewed(routeId, contributorUid, routeSnap.data(), 'rejected')
-      } catch (error) {
-        // The rejection itself succeeded. A failed notification must not undo it.
-        console.error(`Route ${routeId} rejected but notification failed`, error)
-      }
-    }
-    return
+  await incrementApprovedContributionStats(result.contributorId)
+  try {
+    await notifyRouteReviewed(
+      result.mergedInto ?? routeId,
+      result.contributorId,
+      'approved',
+      result.mergedInto
+        ? `Your correction to ${result.title} was approved and is now live.`
+        : `Your submitted route (${result.title}) was approved and is now live.`,
+    )
+  } catch (error) {
+    // The approval itself succeeded. A failed notification must not undo it.
+    console.error(`Route ${routeId} approved but notification failed`, error)
   }
+}
 
-  const shouldIncrementContribution = await runTransaction(db, async (transaction) => {
-    const latestRouteSnap = await transaction.get(routeRef)
-    if (!latestRouteSnap.exists()) {
-      throw new Error(`Route ${routeId} not found`)
-    }
+/** The route is kept, so the contributor can read why and send it again. */
+export async function rejectRoute(routeId: string, reasonCodes: string[], note?: string) {
+  const result = await decideRoute({ routeId, decision: 'reject', reasonCodes, ...(note ? { note } : {}) })
+  if (!result?.contributorId) return
 
-    const wasAlreadyApproved = currentRouteStatus(latestRouteSnap.data()) === 'approved'
-
-    transaction.update(routeRef, {
-      approvalStatus: status,
-      isEdited: false,
-      reviewedBy: reviewerUid,
-      reviewedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    })
-
-    return !wasAlreadyApproved
-  })
-
-  if (shouldIncrementContribution && contributorUid) {
-    await incrementApprovedContributionStats(contributorUid)
-    try {
-      await notifyRouteReviewed(routeId, contributorUid, routeSnap.data(), 'approved')
-    } catch (error) {
-      // The approval itself succeeded. A failed notification must not undo it.
-      console.error(`Route ${routeId} approved but notification failed`, error)
-    }
+  const reasons = reasonCodes.map(rejectionReasonLabel).join(', ')
+  try {
+    await notifyRouteReviewed(
+      routeId,
+      result.contributorId,
+      'rejected',
+      `Your route (${result.title}) was rejected: ${reasons}.${note ? ` Note: ${note}` : ''}`,
+    )
+  } catch (error) {
+    // The rejection itself succeeded. A failed notification must not undo it.
+    console.error(`Route ${routeId} rejected but notification failed`, error)
   }
 }
 
 export async function deleteRoute(routeId: string) {
-  await deleteDoc(doc(db, 'routes', routeId))
+  await callRoutesApi('delete', { routeId })
 }
 
 export async function getPosts(): Promise<PostItem[]> {
@@ -1138,15 +1022,24 @@ export function subscribeDashboardStats(
     handleError,
   )
 
-  const unsubRoutes = subscribeWithTimestampFallback(
-    routesCol,
-    (docs) => {
+  // Routes moved to Supabase, which we don't listen to live, so these refresh
+  // on a timer. Only the first load's failure is reported. A later one keeps
+  // the numbers on screen until the next try works.
+  let stopped = false
+  const loadRoutes = async () => {
+    try {
+      const loaded = await fetchRouteRows()
+      if (stopped) return
+      routes = loaded
       routesReady = true
-      routes = sortDocsByCreatedAtDesc([...docs]).map(mapRouteDoc)
       emitIfReady()
-    },
-    handleError,
-  )
+    } catch (err) {
+      if (routesReady) console.warn('[dashboard] routes refresh failed', err)
+      else handleError(err)
+    }
+  }
+  void loadRoutes()
+  const routesTimer = setInterval(() => void loadRoutes(), ROUTES_REFRESH_MS)
 
   const unsubPosts = subscribeWithTimestampFallback(
     postsCol,
@@ -1171,7 +1064,8 @@ export function subscribeDashboardStats(
   return () => {
     unsubAppeals()
     unsubUsers()
-    unsubRoutes()
+    stopped = true
+    clearInterval(routesTimer)
     unsubPosts()
     unsubFeedback()
   }
@@ -1181,13 +1075,19 @@ export async function getModeratorStats() {
   const users = await getUsers()
   const moderators = users.filter((u) => u.role === 'moderator')
 
-  const [routeApprovedSnap, auditLogDocs] = await Promise.all([
+  // Approvals before the move to Supabase are only in Firestore, and newer ones
+  // are only on the server, so a moderator's count needs both.
+  const [routeApprovedSnap, auditLogDocs, serverApprovals] = await Promise.all([
     getDocs(query(routesCol, where('approvalStatus', '==', 'approved'))),
     // Without the auditLogs collection-group rule deployed this read is
     // denied. Fall back to dashboard approvals only rather than fail the page.
     getDocs(collectionGroup(db, 'auditLogs')).then((s) => s.docs).catch((error) => {
       console.error('Could not read route audit logs', error)
       return [] as QueryDocumentSnapshot<DocumentData>[]
+    }),
+    callRoutesApi<Record<string, string[]>>('moderator_approvals').catch((error) => {
+      console.error('Could not read server approvals', error)
+      return {} as Record<string, string[]>
     }),
   ])
 
@@ -1210,6 +1110,9 @@ export async function getModeratorStats() {
     } else if (log.action === 'correction_merged') {
       addApproval(log.actorId, String(log.meta?.correctionId ?? d.id))
     }
+  })
+  Object.entries(serverApprovals).forEach(([moderator, routeKeys]) => {
+    routeKeys.forEach((routeKey) => addApproval(moderator, routeKey))
   })
 
   return moderators.map((m) => ({

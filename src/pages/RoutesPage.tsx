@@ -1,7 +1,8 @@
 ﻿import { Suspense, lazy, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deleteRoute, getRoutes, updateRouteStatus } from '@/lib/firestoreApi'
-import { useAuth } from '@/hooks/useAuth'
+import { approveRoute, deleteRoute, getRoutes, rejectRoute } from '@/lib/firestoreApi'
+import { rejectionReasonLabel } from '@/lib/routeRejectionReasons'
+import { RejectRouteDialog } from '@/components/RejectRouteDialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { CheckCircle, MapPin, Route, Search, ThumbsDown, ThumbsUp, Trash2, X, XCircle } from 'lucide-react'
 import type { RouteItem } from '@/types/models'
@@ -126,6 +127,15 @@ function EditedBadge({ editCount }: { editCount?: number }) {
   )
 }
 
+/** Why it was rejected, for routes rejected since reasons began. */
+function rejectionSummary(route: RouteItem) {
+  if (route.status !== 'rejected') return null
+  const decision = route.latestDecision
+  const reasons = (decision?.reasonCodes ?? []).map(rejectionReasonLabel).join(', ')
+  if (!reasons) return null
+  return decision?.note ? `${reasons}. Note: ${decision.note}` : reasons
+}
+
 // Same speeds (km/h) the app uses for a commuter route's own ETA: drawn length of
 // each step ÷ speed, no waiting time.
 function speedKmh(mode: string) {
@@ -202,13 +212,14 @@ function formatDistance(route: RouteItem) {
 
 export function RoutesPage() {
   const qc = useQueryClient()
-  const { user } = useAuth()
   const { data = [], isLoading, isError, error } = useQuery({ queryKey: ['routes'], queryFn: getRoutes })
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [preview, setPreview] = useState<RouteItem | null>(null)
   const [page, setPage] = useState(1)
+  // The routes the reason dialog is open for. Null when it's closed.
+  const [rejecting, setRejecting] = useState<string[] | null>(null)
 
   const list = useMemo(() => data
     .filter((r) => statusFilter === 'all' || r.status === statusFilter)
@@ -219,9 +230,9 @@ export function RoutesPage() {
   const paginated = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['routes'] })
-  const approve = useMutation({ mutationFn: (id: string) => updateRouteStatus(id, 'approved', user?.uid ?? ''), onSuccess: refresh })
-  const reject = useMutation({ mutationFn: (id: string) => deleteRoute(id), onSuccess: refresh })
-  const remove = useMutation({ mutationFn: (id: string) => deleteRoute(id), onSuccess: refresh })
+  const showFailure = () => alert("Couldn't save that. Check your connection and try again.")
+  const approve = useMutation({ mutationFn: approveRoute, onSuccess: refresh, onError: showFailure })
+  const remove = useMutation({ mutationFn: (id: string) => deleteRoute(id), onSuccess: refresh, onError: showFailure })
 
   const toggleAll = (checked: boolean) => {
     setSelectedIds(checked ? paginated.map((r) => r.id) : [])
@@ -233,16 +244,17 @@ export function RoutesPage() {
     () => list.filter((r) => selectedIds.includes(r.id)),
     [list, selectedIds],
   )
-  // Approve and Reject apply to the ones not approved yet. Delete to all.
-  const reviewable = selectedRoutes.filter((r) => r.status !== 'approved')
+  // Approve and Reject apply to the ones waiting for review. Delete to all. A
+  // rejected route goes back to pending when its contributor sends it again.
+  const reviewable = selectedRoutes.filter((r) => r.status === 'pending')
   const [bulkBusy, setBulkBusy] = useState(false)
 
-  const runBulk = async (routes: RouteItem[], action: (id: string) => Promise<unknown>) => {
+  const runBulk = async (ids: string[], action: (id: string) => Promise<unknown>) => {
     setBulkBusy(true)
     try {
-      const results = await Promise.allSettled(routes.map((r) => action(r.id)))
+      const results = await Promise.allSettled(ids.map((id) => action(id)))
       const failed = results.filter((r) => r.status === 'rejected').length
-      if (failed) alert(`${failed} of ${routes.length} routes couldn't be updated. Try again.`)
+      if (failed) alert(`${failed} of ${ids.length} routes couldn't be updated. Try again.`)
       setSelectedIds([])
     } finally {
       setBulkBusy(false)
@@ -250,20 +262,17 @@ export function RoutesPage() {
     }
   }
 
-  const bulkApprove = () =>
-    runBulk(reviewable, (id) => updateRouteStatus(id, 'approved', user?.uid ?? ''))
+  const bulkApprove = () => runBulk(reviewable.map((r) => r.id), approveRoute)
 
-  // Rejecting a route that isn't approved deletes it, as on each row.
-  const bulkReject = () => {
-    const n = reviewable.length
-    if (!confirm(`Reject and delete ${n} pending route${n === 1 ? '' : 's'}?`)) return
-    return runBulk(reviewable, deleteRoute)
+  const confirmReject = (ids: string[], reasonCodes: string[], note?: string) => {
+    setRejecting(null)
+    return runBulk(ids, (id) => rejectRoute(id, reasonCodes, note))
   }
 
   const bulkDelete = () => {
     const n = selectedRoutes.length
     if (!confirm(`Delete ${n} route${n === 1 ? '' : 's'} permanently? This can't be undone.`)) return
-    return runBulk(selectedRoutes, deleteRoute)
+    return runBulk(selectedRoutes.map((r) => r.id), deleteRoute)
   }
 
   return (
@@ -311,7 +320,7 @@ export function RoutesPage() {
             <button
               className="btn btn-sm btn-success"
               disabled={bulkBusy || !reviewable.length}
-              title={reviewable.length ? undefined : 'All selected routes are already approved'}
+              title={reviewable.length ? undefined : 'None of the selected routes are waiting for review'}
               onClick={bulkApprove}
             >
               <CheckCircle size={13} /> Approve ({reviewable.length})
@@ -319,8 +328,8 @@ export function RoutesPage() {
             <button
               className="btn btn-sm btn-outline"
               disabled={bulkBusy || !reviewable.length}
-              title={reviewable.length ? undefined : 'All selected routes are already approved'}
-              onClick={bulkReject}
+              title={reviewable.length ? undefined : 'None of the selected routes are waiting for review'}
+              onClick={() => setRejecting(reviewable.map((r) => r.id))}
             >
               <XCircle size={13} /> Reject ({reviewable.length})
             </button>
@@ -410,6 +419,11 @@ export function RoutesPage() {
                       <StatusBadge status={r.status} />
                       {r.status === 'pending' && r.isEdited ? <EditedBadge editCount={r.editCount} /> : null}
                     </div>
+                    {rejectionSummary(r) ? (
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 4, maxWidth: 220 }}>
+                        {rejectionSummary(r)}
+                      </div>
+                    ) : null}
                   </td>
                   <td style={{ fontWeight: 600 }}>{r.views ?? 0}</td>
                   <td>
@@ -427,14 +441,14 @@ export function RoutesPage() {
                   </td>
                   <td>
                     <div className="action-group">
-                      {r.status !== 'approved' ? (
+                      {r.status === 'pending' ? (
                         <>
-                          <button className="btn btn-sm btn-success" onClick={() => approve.mutate(r.id)}>Approve</button>
-                          <button className="btn btn-sm btn-danger" onClick={() => reject.mutate(r.id)}>Reject</button>
+                          <button className="btn btn-sm btn-success" disabled={approve.isPending} onClick={() => approve.mutate(r.id)}>Approve</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => setRejecting([r.id])}>Reject</button>
                         </>
                       ) : null}
                       <button className="btn btn-sm btn-outline" onClick={() => setPreview(r)}>Preview</button>
-                      {r.status === 'approved' ? (
+                      {r.status !== 'pending' ? (
                         <button
                           className="btn btn-sm btn-danger btn-icon"
                           title="Delete route"
@@ -481,6 +495,7 @@ export function RoutesPage() {
                 <RoutePreviewMap route={preview} />
               </Suspense>
               {[
+                ...(rejectionSummary(preview) ? [['Rejected because', rejectionSummary(preview)]] : []),
                 ['Trust', `${computeRouteTrust(preview).total}/100 (${computeRouteTrust(preview).label})`],
                 [
                   'Steps',
@@ -502,6 +517,14 @@ export function RoutesPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {rejecting ? (
+        <RejectRouteDialog
+          count={rejecting.length}
+          onCancel={() => setRejecting(null)}
+          onConfirm={(reasonCodes, note) => confirmReject(rejecting, reasonCodes, note)}
+        />
+      ) : null}
     </div>
   )
 }
