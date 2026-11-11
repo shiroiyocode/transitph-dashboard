@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase/firestore'
-import type { RouteItem, RouteStopItem } from '@/types/models'
+import type { RouteCheckItem, RouteItem, RouteStopItem } from '@/types/models'
 
 function toTimestamp(value: unknown): Timestamp | undefined {
   if (typeof value !== 'string' || !value) return undefined
@@ -16,6 +16,16 @@ function toLatLngs(value: unknown): RouteStopItem[] {
     const point = p as Record<string, unknown> | null
     if (typeof point?.lat !== 'number' || typeof point?.lng !== 'number') return []
     return [{ lat: point.lat, lng: point.lng, name: typeof point.name === 'string' ? point.name : undefined }]
+  })
+}
+
+function toChecks(value: unknown): RouteCheckItem[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((c: unknown) => {
+    const check = c as Record<string, unknown> | null
+    if (typeof check?.code !== 'string' || typeof check.message !== 'string') return []
+    if (check.result !== 'pass' && check.result !== 'fail' && check.result !== 'flag' && check.result !== 'skip') return []
+    return [{ code: check.code, result: check.result, message: check.message }]
   })
 }
 
@@ -81,8 +91,11 @@ export function mapRouteRow(row: Record<string, unknown>): RouteItem {
             ? decision.reason_codes.filter((c: unknown): c is string => typeof c === 'string')
             : [],
           note: asString(decision.note),
+          actor: asString(decision.actor),
         }
       : undefined,
+    isUnverified: row.status === 'published' && row.verification === 'unverified',
+    checks: toChecks(row.latest_checks),
   }
 }
 

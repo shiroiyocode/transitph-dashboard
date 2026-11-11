@@ -1,8 +1,10 @@
 ﻿import { Suspense, lazy, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { approveRoute, deleteRoute, getRoutes, rejectRoute } from '@/lib/firestoreApi'
+import { approveRoute, deleteRoute, getRoutes, rejectRoute, setRouteVerified } from '@/lib/firestoreApi'
 import { rejectionReasonLabel } from '@/lib/routeRejectionReasons'
+import { ApproveNoteDialog } from '@/components/ApproveNoteDialog'
 import { RejectRouteDialog } from '@/components/RejectRouteDialog'
+import { RouteChecklist } from '@/components/RouteChecklist'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { CheckCircle, MapPin, Route, Search, ThumbsDown, ThumbsUp, Trash2, X, XCircle } from 'lucide-react'
 import type { RouteItem } from '@/types/models'
@@ -130,11 +132,16 @@ function EditedBadge({ editCount }: { editCount?: number }) {
 /** Why it was rejected, for routes rejected since reasons began. */
 function rejectionSummary(route: RouteItem) {
   if (route.status !== 'rejected') return null
+  // The checks explain themselves, and their codes aren't for reading.
+  const failed = (route.checks ?? []).filter((check) => check.result === 'fail').map((check) => check.message)
+  if (failed.length) return failed.join(' ')
   const decision = route.latestDecision
   const reasons = (decision?.reasonCodes ?? []).map(rejectionReasonLabel).join(', ')
   if (!reasons) return null
   return decision?.note ? `${reasons}. Note: ${decision.note}` : reasons
 }
+
+const flagsOf = (route: RouteItem) => (route.checks ?? []).filter((check) => check.result === 'flag')
 
 // Same speeds (km/h) the app uses for a commuter route's own ETA: drawn length of
 // each step ÷ speed, no waiting time.
@@ -220,6 +227,8 @@ export function RoutesPage() {
   const [page, setPage] = useState(1)
   // The routes the reason dialog is open for. Null when it's closed.
   const [rejecting, setRejecting] = useState<string[] | null>(null)
+  // The routes the "why approve" dialog is open for. Null when it's closed.
+  const [approving, setApproving] = useState<RouteItem[] | null>(null)
 
   const list = useMemo(() => data
     .filter((r) => statusFilter === 'all' || r.status === statusFilter)
@@ -231,7 +240,19 @@ export function RoutesPage() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['routes'] })
   const showFailure = () => alert("Couldn't save that. Check your connection and try again.")
-  const approve = useMutation({ mutationFn: approveRoute, onSuccess: refresh, onError: showFailure })
+  const approve = useMutation({
+    mutationFn: ({ id, note }: { id: string; note?: string }) => approveRoute(id, note),
+    onSuccess: refresh,
+    onError: showFailure,
+  })
+  const verify = useMutation({
+    mutationFn: ({ id, verified }: { id: string; verified: boolean }) => setRouteVerified(id, verified),
+    onSuccess: () => {
+      setPreview(null)
+      refresh()
+    },
+    onError: showFailure,
+  })
   const remove = useMutation({ mutationFn: (id: string) => deleteRoute(id), onSuccess: refresh, onError: showFailure })
 
   const toggleAll = (checked: boolean) => {
@@ -262,7 +283,21 @@ export function RoutesPage() {
     }
   }
 
-  const bulkApprove = () => runBulk(reviewable.map((r) => r.id), approveRoute)
+  // Going against the checklist has to be on record, so ask first if any flag.
+  const askToApprove = (routes: RouteItem[]) => {
+    if (routes.some((r) => flagsOf(r).length > 0)) {
+      setApproving(routes)
+      return
+    }
+    if (routes.length === 1) approve.mutate({ id: routes[0].id })
+    else void runBulk(routes.map((r) => r.id), (id) => approveRoute(id))
+  }
+
+  const confirmApprove = (routes: RouteItem[], note: string) => {
+    setApproving(null)
+    if (routes.length === 1) approve.mutate({ id: routes[0].id, note })
+    else void runBulk(routes.map((r) => r.id), (id) => approveRoute(id, note))
+  }
 
   const confirmReject = (ids: string[], reasonCodes: string[], note?: string) => {
     setRejecting(null)
@@ -321,7 +356,7 @@ export function RoutesPage() {
               className="btn btn-sm btn-success"
               disabled={bulkBusy || !reviewable.length}
               title={reviewable.length ? undefined : 'None of the selected routes are waiting for review'}
-              onClick={bulkApprove}
+              onClick={() => askToApprove(reviewable)}
             >
               <CheckCircle size={13} /> Approve ({reviewable.length})
             </button>
@@ -418,7 +453,13 @@ export function RoutesPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <StatusBadge status={r.status} />
                       {r.status === 'pending' && r.isEdited ? <EditedBadge editCount={r.editCount} /> : null}
+                      {r.isUnverified ? <span className="badge badge-pending" title="Only the automatic checks have looked at this">Unverified</span> : null}
                     </div>
+                    {r.status === 'pending' && flagsOf(r).length > 0 ? (
+                      <div style={{ fontSize: '0.74rem', color: 'var(--warning)', marginTop: 4, maxWidth: 220 }}>
+                        {flagsOf(r).length} flag{flagsOf(r).length === 1 ? '' : 's'}: {flagsOf(r)[0].message}
+                      </div>
+                    ) : null}
                     {rejectionSummary(r) ? (
                       <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 4, maxWidth: 220 }}>
                         {rejectionSummary(r)}
@@ -443,7 +484,7 @@ export function RoutesPage() {
                     <div className="action-group">
                       {r.status === 'pending' ? (
                         <>
-                          <button className="btn btn-sm btn-success" disabled={approve.isPending} onClick={() => approve.mutate(r.id)}>Approve</button>
+                          <button className="btn btn-sm btn-success" disabled={approve.isPending} onClick={() => askToApprove([r])}>Approve</button>
                           <button className="btn btn-sm btn-danger" onClick={() => setRejecting([r.id])}>Reject</button>
                         </>
                       ) : null}
@@ -494,6 +535,7 @@ export function RoutesPage() {
               <Suspense fallback={<div className="route-preview-map route-preview-map-empty">Loading map…</div>}>
                 <RoutePreviewMap route={preview} />
               </Suspense>
+              <RouteChecklist checks={preview.checks ?? []} />
               {[
                 ...(rejectionSummary(preview) ? [['Rejected because', rejectionSummary(preview)]] : []),
                 ['Trust', `${computeRouteTrust(preview).total}/100 (${computeRouteTrust(preview).label})`],
@@ -513,10 +555,30 @@ export function RoutesPage() {
                   <span className="dialog-field-value">{value}</span>
                 </div>
               ))}
+              {preview.status === 'approved' ? (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+                  <button
+                    className="btn btn-sm btn-outline"
+                    disabled={verify.isPending}
+                    onClick={() => verify.mutate({ id: preview.id, verified: Boolean(preview.isUnverified) })}
+                  >
+                    {preview.isUnverified ? 'Mark as verified' : 'Mark as unverified'}
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {approving ? (
+        <ApproveNoteDialog
+          count={approving.length}
+          flags={Array.from(new Set(approving.flatMap((r) => flagsOf(r).map((check) => check.message))))}
+          onCancel={() => setApproving(null)}
+          onConfirm={(note) => confirmApprove(approving, note)}
+        />
+      ) : null}
 
       {rejecting ? (
         <RejectRouteDialog

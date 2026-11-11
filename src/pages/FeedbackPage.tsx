@@ -4,6 +4,7 @@ import { deleteFeedback, getFeedback, updateFeedbackStatus } from '@/lib/firesto
 import { Bell, CheckCircle, MessageSquare, Trash2, XCircle } from 'lucide-react'
 import { Pager } from '@/components/Pager'
 import { usePaged } from '@/hooks/usePaged'
+import { RouteProblemsSection } from '@/components/RouteProblemsSection'
 import { RouteReportsSection } from '@/components/RouteReportsSection'
 import { AppealsSection } from '@/components/AppealsSection'
 
@@ -64,6 +65,8 @@ export function FeedbackPage() {
       </div>
 
       <AppealsSection />
+
+      <RouteProblemsSection />
 
       <RouteReportsSection />
 

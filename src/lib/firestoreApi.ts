@@ -37,6 +37,7 @@ import type {
   DashboardStats,
   FeedbackItem,
   PostItem,
+  FareRuleItem,
   RouteItem,
   RouteReportItem,
   UserRole,
@@ -811,8 +812,9 @@ async function decideRoute(body: object): Promise<RouteDecisionResult | null> {
   }
 }
 
-export async function approveRoute(routeId: string) {
-  const result = await decideRoute({ routeId, decision: 'approve' })
+/** Approving over a flagged check needs a note saying why. The server refuses without one. */
+export async function approveRoute(routeId: string, note?: string) {
+  const result = await decideRoute({ routeId, decision: 'approve', ...(note ? { note } : {}) })
   if (!result?.contributorId) return
 
   await incrementApprovedContributionStats(result.contributorId)
@@ -850,8 +852,21 @@ export async function rejectRoute(routeId: string, reasonCodes: string[], note?:
   }
 }
 
+/** A person vouching for a live route, or taking that back. It stays live. */
+export async function setRouteVerified(routeId: string, verified: boolean) {
+  await decideRoute({ routeId, decision: verified ? 'verify' : 'unverify' })
+}
+
 export async function deleteRoute(routeId: string) {
   await callRoutesApi('delete', { routeId })
+}
+
+export async function getFareRules(): Promise<FareRuleItem[]> {
+  return callRoutesApi<FareRuleItem[]>('admin_fare_rules')
+}
+
+export async function addFareRule(rule: Omit<FareRuleItem, 'id' | 'effective_from'> & { effective_from?: string }) {
+  await callRoutesApi('admin_set_fare_rule', rule)
 }
 
 export async function getPosts(): Promise<PostItem[]> {

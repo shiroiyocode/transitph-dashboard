@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { mapRouteRow, mapRouteRows } from '../src/lib/routeRows.ts'
 import { createRoutesApi, RoutesApiError } from '../src/lib/routesApiClient.ts'
+import { describeCounts, faresPaid, mapRouteProblems, sourceLabel } from '../src/lib/routeProblems.ts'
 
 const row = (extra: Record<string, unknown> = {}) => ({
   id: 'r1',
@@ -100,7 +101,29 @@ test('the latest decision carries its reasons and note', () => {
       latest_decision: { decision: 'rejected', reason_codes: ['wrong_fare', 'other'], note: 'Check it' },
     }),
   )
-  assert.deepEqual(route.latestDecision, { decision: 'rejected', reasonCodes: ['wrong_fare', 'other'], note: 'Check it' })
+  assert.deepEqual(route.latestDecision, { decision: 'rejected', reasonCodes: ['wrong_fare', 'other'], note: 'Check it', actor: undefined })
+})
+
+test('checks come through, and bad ones are skipped', () => {
+  const route = mapRouteRow(row({
+    latest_checks: [
+      { code: 'S_AREA', result: 'flag', message: 'Outside' },
+      { code: 'X', result: 'made up', message: 'skip me' },
+      { result: 'pass' },
+    ],
+  }))
+  assert.deepEqual(route.checks, [{ code: 'S_AREA', result: 'flag', message: 'Outside' }])
+})
+
+test('only a live route can be unverified', () => {
+  assert.equal(mapRouteRow(row({ verification: 'unverified' })).isUnverified, true)
+  assert.equal(mapRouteRow(row({ verification: 'verified' })).isUnverified, false)
+  assert.equal(mapRouteRow(row({ status: 'pending', verification: 'unverified' })).isUnverified, false)
+})
+
+test('the actor shows who decided', () => {
+  const route = mapRouteRow(row({ latest_decision: { decision: 'auto_rejected', reason_codes: ['H_COORDS'], actor: 'system' } }))
+  assert.equal(route.latestDecision?.actor, 'system')
 })
 
 test('a correction mid-merge is left out of lists', () => {
@@ -181,4 +204,42 @@ test('no signed-in user stops before calling the server', async () => {
 test('a missing server address says so', async () => {
   const call = createRoutesApi({ baseUrl: undefined, getToken: async () => 'x' })
   await assert.rejects(call('decide'), /VITE_SUPABASE_URL/)
+})
+
+// Route problems (riders' reports about a route's details)
+
+test('mapRouteProblems reads the queue and skips junk', () => {
+  const problems = mapRouteProblems([
+    {
+      routeKey: 'gtfs:R1',
+      title: 'Monumento - Navotas',
+      source: 'gtfs',
+      outdated: { types: ['not_operating', 5], riders: 5, since: '2026-11-01T00:00:00Z' },
+      counts: { not_operating: 5, wrong_fare: 0 },
+      riders: 5,
+      issues: [{ id: 1, reporter_id: 'u1', type: 'wrong_fare', fare_paid: '15.5', step_index: null, note: 'Up by 2' }],
+    },
+    { title: 'no key' },
+    'junk',
+  ])
+  assert.equal(problems.length, 1)
+  assert.deepEqual(problems[0].outdated, { types: ['not_operating'], riders: 5, since: '2026-11-01T00:00:00Z' })
+  assert.deepEqual(problems[0].counts, { not_operating: 5 })
+  assert.equal(problems[0].issues[0].farePaid, 15.5)
+  assert.deepEqual(mapRouteProblems(null), [])
+})
+
+test('route problem labels read naturally', () => {
+  assert.equal(describeCounts({ wrong_fare: 3, wrong_stop: 1 }), 'Wrong fare: 3 riders · Wrong stop: 1 rider')
+  assert.equal(sourceLabel('gtfs'), 'DOTC 2013 data')
+  assert.equal(sourceLabel(null), 'Rider route')
+  const issue = { id: 1, reporterId: 'u', type: 'wrong_fare', note: null, correctionId: null, createdAt: null }
+  assert.equal(
+    faresPaid([
+      { ...issue, farePaid: 15, stepIndex: null },
+      { ...issue, farePaid: 15.5, stepIndex: 1 },
+      { ...issue, farePaid: null, stepIndex: null },
+    ]),
+    'PHP 15, PHP 15.50 (step 2)',
+  )
 })

@@ -1,4 +1,5 @@
 ﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { FareRulesSection } from '@/components/FareRulesSection'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { useState } from 'react'
 import { db } from '@/lib/firebase'
@@ -80,6 +81,8 @@ export function SettingsPage() {
       </div>
 
       <div style={{ display: 'grid', gap: 14, maxWidth: 680 }}>
+        <FareRulesSection />
+
         <div className="settings-section">
           <div className="settings-title">Update Checker</div>
 

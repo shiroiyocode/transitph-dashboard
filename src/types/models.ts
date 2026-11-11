@@ -63,7 +63,30 @@ export interface RouteItem {
     decision: string
     reasonCodes: string[]
     note?: string
+    /** "system" when the automatic checks decided. */
+    actor?: string
   }
+  /** Live, but only the automatic checks have looked at it so far. */
+  isUnverified?: boolean
+  checks?: RouteCheckItem[]
+}
+
+export interface RouteCheckItem {
+  code: string
+  result: 'pass' | 'fail' | 'flag' | 'skip'
+  message: string
+}
+
+export type FareRuleMode = 'jeepney' | 'jeepney_modern' | 'bus' | 'bus_aircon' | 'fx_van' | 'tricycle'
+
+export interface FareRuleItem {
+  id: number
+  mode: FareRuleMode
+  base: number
+  base_km: number
+  per_km: number
+  effective_from: string
+  source: string
 }
 
 export interface LatLngItem {
