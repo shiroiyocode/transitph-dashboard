@@ -35,6 +35,8 @@ export interface RouteItem {
   createdAt?: Timestamp
   updatedAt?: Timestamp
   editedAt?: Timestamp
+  /** When a pending route joined the review queue. Empty for other statuses. */
+  queuedAt?: Timestamp
   status: RouteStatus
   isEdited?: boolean
   editCount?: number

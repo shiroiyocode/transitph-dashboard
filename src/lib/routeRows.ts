@@ -49,6 +49,12 @@ export function mapRouteRow(row: Record<string, unknown>): RouteItem {
     createdAt: toTimestamp(row.created_at),
     updatedAt: toTimestamp(row.updated_at),
     editedAt: toTimestamp(data.editedAt),
+    // Its latest decision ("flagged", or "resubmitted" for an edit) is when it
+    // joined the queue. Older routes without one fall back to their dates.
+    queuedAt:
+      row.status === 'pending'
+        ? toTimestamp(decision?.created_at) ?? toTimestamp(row.updated_at) ?? toTimestamp(row.created_at)
+        : undefined,
     status: row.status === 'published' ? 'approved' : row.status === 'rejected' ? 'rejected' : 'pending',
     isEdited: Boolean(data.isEdited ?? false),
     editCount: Number(data.editCount ?? 0),

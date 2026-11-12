@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { approveRoute, deleteRoute, getRoutes, rejectRoute, setRouteVerified } from '@/lib/firestoreApi'
 import { rejectionReasonLabel } from '@/lib/routeRejectionReasons'
+import { isOverdue, reviewOrder, waitingText } from '@/lib/reviewWait'
 import { ApproveNoteDialog } from '@/components/ApproveNoteDialog'
 import { RejectRouteDialog } from '@/components/RejectRouteDialog'
 import { RouteChecklist } from '@/components/RouteChecklist'
@@ -230,9 +231,10 @@ export function RoutesPage() {
   // The routes the "why approve" dialog is open for. Null when it's closed.
   const [approving, setApproving] = useState<RouteItem[] | null>(null)
 
-  const list = useMemo(() => data
+  // Pending routes come first, longest wait at the top.
+  const list = useMemo(() => reviewOrder(data
     .filter((r) => statusFilter === 'all' || r.status === statusFilter)
-    .filter((r) => `${r.startLocation ?? ''} ${r.endLocation ?? ''}`.toLowerCase().includes(search.toLowerCase())),
+    .filter((r) => `${r.startLocation ?? ''} ${r.endLocation ?? ''}`.toLowerCase().includes(search.toLowerCase()))),
     [data, statusFilter, search])
 
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE))
@@ -448,6 +450,18 @@ export function RoutesPage() {
                   </td>
                   <td style={{ fontSize: '0.81rem', color: 'var(--text-secondary)' }}>
                     {r.createdAt?.toDate().toLocaleDateString() ?? '-'}
+                    {waitingText(r) ? (
+                      <div
+                        style={{
+                          fontSize: '0.74rem',
+                          marginTop: 2,
+                          fontWeight: isOverdue(r) ? 600 : 400,
+                          color: isOverdue(r) ? 'var(--danger)' : 'var(--text-muted)',
+                        }}
+                      >
+                        {waitingText(r)}
+                      </div>
+                    ) : null}
                   </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>

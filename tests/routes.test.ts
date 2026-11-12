@@ -243,3 +243,49 @@ test('route problem labels read naturally', () => {
     'PHP 15, PHP 15.50 (step 2)',
   )
 })
+
+// Waiting for review
+
+import { daysWaiting, isOverdue, reviewOrder, waitingText } from '../src/lib/reviewWait.ts'
+
+const DAY = 86400000
+const NOW = Date.parse('2026-11-12T00:00:00.000Z')
+const waiting = (id: string, daysAgo: number | null, status: 'pending' | 'approved' = 'pending') => ({
+  id,
+  status,
+  queuedAt: daysAgo === null ? undefined : ({ toMillis: () => NOW - daysAgo * DAY } as never),
+})
+
+test('a pending route joined the queue at its latest decision', () => {
+  const route = mapRouteRow(
+    row({ status: 'pending', latest_decision: { decision: 'flagged', created_at: '2026-11-05T02:00:00.000Z' } }),
+  )
+  assert.equal(route.queuedAt?.toDate().toISOString(), '2026-11-05T02:00:00.000Z')
+  // Without a decision, the row's own dates stand in.
+  assert.equal(mapRouteRow(row({ status: 'pending' })).queuedAt?.toDate().toISOString(), '2026-11-02T02:00:00.000Z')
+  // Only pending routes are waiting.
+  assert.equal(mapRouteRow(row({ latest_decision: { decision: 'approved', created_at: '2026-11-05T02:00:00.000Z' } })).queuedAt, undefined)
+})
+
+test('waiting days, and overdue from 7 days', () => {
+  assert.equal(waitingText(waiting('a', 0), NOW), 'New today')
+  assert.equal(waitingText(waiting('a', 1), NOW), 'Waiting 1 day')
+  assert.equal(waitingText(waiting('a', 6.5), NOW), 'Waiting 6 days')
+  assert.equal(isOverdue(waiting('a', 6.9), NOW), false)
+  assert.equal(waitingText(waiting('a', 9), NOW), 'Overdue · 9 days')
+  assert.equal(isOverdue(waiting('a', 7), NOW), true)
+  assert.equal(waitingText(waiting('a', 9, 'approved'), NOW), null)
+  assert.equal(daysWaiting(waiting('a', null), NOW), 0)
+})
+
+test('pending routes come first, longest wait at the top, the rest keep their order', () => {
+  const order = reviewOrder([
+    waiting('live1', 20, 'approved'),
+    waiting('new', 1),
+    waiting('live2', 1, 'approved'),
+    waiting('old', 9),
+    waiting('no_date', null),
+    waiting('middle', 4),
+  ]).map((r) => r.id)
+  assert.deepEqual(order, ['old', 'middle', 'new', 'no_date', 'live1', 'live2'])
+})
